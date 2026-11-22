@@ -55,7 +55,7 @@ fn login_client(binding: Option<&Binding>) -> Option<&str> {
 fn snapshot(app: State<App>) -> Result<Value> {
     let s = guard(&app.store)?;
     Ok(
-        json!({"records":s.records()?,"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
+        json!({"defaultListId":DEFAULT_LIST_ID,"records":s.records()?,"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
     )
 }
 #[tauri::command]
@@ -245,18 +245,9 @@ async fn import_selected(
         if !ids.iter().any(|i| i == id) {
             continue;
         }
-        if guard(&app.store)?
-            .get(import::list_id(&drive, id))?
-            .is_some()
-        {
-            skipped += 1;
-            continue;
-        }
-        match import::fetch(&g, &drive, &list).await {
-            Ok(doc) => {
-                guard(&app.store)?.save(&Record::new(doc))?;
-                imported += 1
-            }
+        match import::selected(&g, &app.store, &drive, &list, id).await {
+            Ok(true) => imported += 1,
+            Ok(false) => skipped += 1,
             Err(e) => errors.push(format!("{}：{e}", list["displayName"])),
         }
     }

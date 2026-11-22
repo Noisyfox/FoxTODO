@@ -1,9 +1,11 @@
+use crate::sync::guard;
 use crate::{
     graph::{segment, Graph},
     store::*,
 };
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
+use std::{collections::HashMap, sync::Mutex};
 use uuid::Uuid;
 fn string(v: &Value, k: &str) -> String {
     v[k].as_str().unwrap_or("").into()
@@ -38,7 +40,78 @@ pub fn list_id(drive: &str, id: &str) -> Uuid {
         format!("ms-todo:{drive}:{id}").as_bytes(),
     )
 }
-pub async fn fetch(graph: &Graph, drive: &str, list: &Value) -> Result<Document> {
+// An older import used the Microsoft list's derived ID for the default list too.
+// Keep those task IDs and any local edits when promoting that list on re-import.
+fn add_default_tasks(store: &Store, source: &Document) -> Result<bool> {
+    let mut tasks = store
+        .get(DEFAULT_LIST_ID)?
+        .unwrap_or_else(|| Record::new(Document::new(DEFAULT_LIST_ID, "任务".into())));
+    if tasks.conflict.is_some() || tasks.deleted {
+        return Err("请先处理固定任务清单的同步冲突".into());
+    }
+    let imported = tasks.doc.default_imports.contains(&source.id);
+    let existing: HashMap<_, _> = tasks.doc.tasks.iter().map(|t| (t.id, t)).collect();
+    let mut additions = Vec::new();
+    for t in &source.tasks {
+        match existing.get(&t.id) {
+            Some(saved) if *saved == t => {}
+            None if !imported => additions.push(t.clone()),
+            _ => return Err("两份任务清单中的同一任务有不同修改，已保留两份清单".into()),
+        }
+    }
+    if imported {
+        return Ok(false);
+    }
+    tasks.doc.tasks.extend(additions);
+    tasks.doc.default_imports.push(source.id);
+    tasks.dirty = true;
+    tasks.revision += 1;
+    store.save(&tasks)?;
+    Ok(true)
+}
+
+pub async fn selected(
+    graph: &Graph,
+    store: &Mutex<Store>,
+    drive: &str,
+    list: &Value,
+    key: &str,
+) -> Result<bool> {
+    let source_id = list_id(drive, key);
+    let default = list["wellknownListName"] == "defaultList";
+    {
+        let s = guard(store)?;
+        if let Some(old) = s.get(source_id)? {
+            if !default || old.deleted {
+                return Ok(false);
+            }
+            if old.conflict.is_some() {
+                return Err("请先处理已导入清单的同步冲突".into());
+            }
+            // If an earlier promotion was interrupted, keep any independently
+            // edited copy rather than deleting tasks that were never transferred.
+            add_default_tasks(&s, &old.doc)?;
+            s.edit(old.doc, old.revision, true)?;
+            return Ok(true);
+        }
+        if default
+            && s.get(DEFAULT_LIST_ID)?
+                .is_some_and(|r| r.doc.default_imports.contains(&source_id))
+        {
+            return Ok(false);
+        }
+    }
+    let doc = fetch(graph, drive, list).await?;
+    let s = guard(store)?;
+    if default {
+        add_default_tasks(&s, &doc)
+    } else {
+        s.save(&Record::new(doc))?;
+        Ok(true)
+    }
+}
+
+async fn fetch(graph: &Graph, drive: &str, list: &Value) -> Result<Document> {
     let key = list["id"].as_str().ok_or("清单缺少 ID")?;
     let id = list_id(drive, key);
     let mut doc = Document::new(id, string(list, "displayName"));
@@ -120,6 +193,47 @@ pub async fn fetch(graph: &Graph, drive: &str, list: &Value) -> Result<Document>
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn promotes_only_the_builtin_import_and_keeps_local_edits() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Mutex::new(Store::open(tmp.path().into()).unwrap());
+        let default = json!({"id":"L","displayName":"Aufgaben","wellknownListName":"defaultList"});
+        let custom = json!({"id":"C","displayName":"任务","wellknownListName":"none"});
+        let graph = Graph {
+            http: reqwest::Client::new(),
+            token: String::new(),
+        };
+        let fixed = Document::new(DEFAULT_LIST_ID, "任务".into());
+        store.lock().unwrap().edit(fixed.clone(), 0, false).unwrap();
+        assert!(store.lock().unwrap().edit(fixed, 2, true).is_err());
+        for source in [&default, &custom] {
+            let mut doc = Document::new(
+                list_id("drive", source["id"].as_str().unwrap()),
+                source["displayName"].as_str().unwrap().into(),
+            );
+            doc.tasks.push(Task {
+                title: "本机编辑".into(),
+                ..Default::default()
+            });
+            store.lock().unwrap().edit(doc, 0, false).unwrap();
+        }
+        assert!(!selected(&graph, &store, "drive", &custom, "C")
+            .await
+            .unwrap());
+        assert!(selected(&graph, &store, "drive", &default, "L")
+            .await
+            .unwrap());
+        assert!(!selected(&graph, &store, "drive", &default, "L")
+            .await
+            .unwrap());
+        let s = store.lock().unwrap();
+        let fixed = s.get(DEFAULT_LIST_ID).unwrap().unwrap();
+        assert_eq!(fixed.doc.tasks.len(), 1);
+        assert_eq!(fixed.doc.tasks[0].title, "本机编辑");
+        assert!(s.get(list_id("drive", "L")).unwrap().unwrap().deleted);
+        assert!(!s.get(list_id("drive", "C")).unwrap().unwrap().deleted);
+    }
 
     #[test]
     fn converts_windows_and_iana_reminder_times_to_the_same_instant() {

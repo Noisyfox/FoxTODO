@@ -9,6 +9,7 @@ type LocalState = View & {
   saveFailed: boolean;
 };
 let state: LocalState = {
+  defaultListId: "",
   records: [],
   binding: null,
   oneDriveAvailable: false,

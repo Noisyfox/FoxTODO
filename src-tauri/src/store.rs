@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+// A workspace has one Tasks JSON, even when two devices first use it offline.
+pub const DEFAULT_LIST_ID: Uuid = uuid::uuid!("3d430186-0ef4-5a7c-9eb6-6a4d69e92b49");
 pub type Result<T> = std::result::Result<T, String>;
 pub fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -116,6 +118,8 @@ pub struct Document {
     #[serde(default)]
     pub group: String,
     pub tasks: Vec<Task>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_imports: Vec<Uuid>,
 }
 impl Document {
     pub fn new(id: Uuid, name: String) -> Self {
@@ -126,6 +130,7 @@ impl Document {
             name,
             group: String::new(),
             tasks: vec![],
+            default_imports: vec![],
         }
     }
     pub fn validate(&self, id: Uuid) -> Result<()> {
@@ -287,6 +292,9 @@ impl Store {
         Ok(())
     }
     pub fn edit(&self, doc: Document, revision: u64, deleted: bool) -> Result<()> {
+        if doc.id == DEFAULT_LIST_ID && (deleted || doc.name != "任务" || !doc.group.is_empty()) {
+            return Err("固定任务清单无法删除、重命名或移动".into());
+        }
         let mut r = match self.get(doc.id)? {
             Some(r) if revision == r.revision => r,
             None if revision == 0 => Record::new(doc.clone()),

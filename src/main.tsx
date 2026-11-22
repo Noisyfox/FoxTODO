@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  House,
   Sun,
   Star,
   CalendarDays,
@@ -114,6 +115,8 @@ function App() {
   const rows = v.records
       .filter((r) => !r.deleted)
       .sort((a, b) => a.doc.name.localeCompare(b.doc.name, "zh")),
+    defaultList = rows.find((r) => r.doc.id === v.defaultListId),
+    customLists = rows.filter((r) => r.doc.id !== v.defaultListId),
     special = views.find((t) => t.id === active),
     currentList = rows.find((r) => r.doc.id === active),
     needle = search.trim().toLowerCase(),
@@ -180,11 +183,8 @@ function App() {
     setGroup(m === "rename" ? currentList?.doc.group || "" : "");
   }
   function add() {
-    if (!entry.trim()) return;
-    const seed =
-        currentList?.doc ||
-        rows.find((r) => r.doc.name === "任务")?.doc ||
-        newList("任务"),
+    if (!entry.trim() || !v.ready) return;
+    const seed = currentList?.doc ?? newList("任务", v.defaultListId),
       t = newTask(entry.trim());
     if (active === "day") t.myDay = today;
     if (active === "important") t.important = true;
@@ -198,8 +198,14 @@ function App() {
   }
   const title = needle
     ? "搜索结果"
-    : currentList?.doc.name || special?.name || "我的清单";
-  const HeadIcon = needle ? Search : special?.icon || ListIcon;
+    : active === v.defaultListId
+      ? "任务"
+      : currentList?.doc.name || special?.name || "我的清单";
+  const HeadIcon = needle
+    ? Search
+    : active === v.defaultListId
+      ? House
+      : special?.icon || ListIcon;
   function taskRows(items: (OrderedItem & { r: Row; t: Task })[]) {
     return (
       <SortArea
@@ -347,6 +353,17 @@ function App() {
                 </small>
               </button>
             ))}
+            <button
+              disabled={!v.ready}
+              className={active === v.defaultListId && !needle ? "active" : ""}
+              onClick={() => go(v.defaultListId)}
+            >
+              <House size={18} />
+              任务
+              <small>
+                {defaultList?.doc.tasks.filter((t) => !t.done).length || ""}
+              </small>
+            </button>
           </nav>
           <div className="lists-header">
             <h3>我的清单</h3>
@@ -359,10 +376,10 @@ function App() {
             </button>
           </div>
           <nav>
-            {Array.from(new Set(rows.map((r) => r.doc.group)))
+            {Array.from(new Set(customLists.map((r) => r.doc.group)))
               .sort()
               .map((g) => {
-                const members = rows
+                const members = customLists
                   .filter((r) => r.doc.group === g)
                   .map((r) => ({ r, ...listItem(r.doc) }))
                   .sort(compareOrder);
@@ -545,7 +562,7 @@ function App() {
             </div>
             {menu && (
               <div className="popover">
-                {currentList && (
+                {currentList && active !== v.defaultListId && (
                   <>
                     <button onClick={() => dialog("rename")}>
                       <Pencil size={15} />

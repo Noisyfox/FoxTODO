@@ -61,6 +61,7 @@ export interface Row {
   conflict: null | { remote: null | { doc: List } };
 }
 export interface View {
+  defaultListId: string;
   records: Row[];
   binding: Binding | null;
   oneDriveAvailable: boolean;
@@ -73,8 +74,8 @@ export const dateKey = (d = new Date()) =>
     String(d.getMonth() + 1).padStart(2, "0"),
     String(d.getDate()).padStart(2, "0"),
   ].join("-");
-export const newList = (name: string): List => ({
-  id: uid(),
+export const newList = (name: string, id: string = uid()): List => ({
+  id,
   version: 1,
   name,
   group: "",
