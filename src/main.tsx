@@ -48,6 +48,7 @@ import {
   sync,
   start,
   report,
+  dismissError,
 } from "./session";
 import {
   newTask,
@@ -330,9 +331,11 @@ function App() {
             : "本机工作区"
           : !online
             ? "离线 · 已保存到本机"
-            : v.records.some((r) => r.dirty)
-              ? "已保存到本机 · 待同步"
-              : "已同步";
+            : v.syncFailed
+              ? "同步未完成 · 点击重试"
+              : v.records.some((r) => r.dirty)
+                ? "已保存到本机 · 待同步"
+                : "已同步";
   return (
     <SidebarLayout withDetail={!!detail}>
       {nav && (
@@ -561,18 +564,18 @@ function App() {
               </h1>
             </div>
           </div>
-          {v.error && (
+          {(v.error || v.syncError) && (
             <div
               role="alert"
               className="my-2 flex items-center justify-between gap-2 whitespace-pre-line rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
             >
-              {v.error}
+              {v.error || v.syncError}
               <Button
                 variant="ghost"
                 size="icon-sm"
 
                 title="关闭提示"
-                onClick={() => report("")}
+                onClick={dismissError}
               >
                 <X size={14} />
               </Button>

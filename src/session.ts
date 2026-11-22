@@ -3,6 +3,8 @@ import { preserveOrder } from "./listOrder";
 import type { List, Row, View } from "./model";
 type LocalState = View & {
   error: string;
+  syncError: string;
+  syncFailed: boolean;
   busy: boolean;
   saving: number;
   ready: boolean;
@@ -15,6 +17,8 @@ let state: LocalState = {
   oneDriveAvailable: false,
   platform: "",
   error: "",
+  syncError: "",
+  syncFailed: false,
   busy: false,
   saving: 0,
   ready: false,
@@ -33,6 +37,8 @@ function update(p: Partial<LocalState>) {
   listeners.forEach((f) => f());
 }
 export const report = (e: unknown) => update({ error: String(e) });
+export const dismissError = () =>
+  update(state.error ? { error: "" } : { syncError: "" });
 let queue = Promise.resolve<unknown>(undefined),
   timer: ReturnType<typeof setTimeout>;
 function serial<T>(f: () => Promise<T>): Promise<T> {
@@ -93,9 +99,9 @@ export async function sync() {
   update({ busy: true });
   try {
     const errors = await invoke<string[]>("synchronize");
-    if (errors.length) report(errors.join("\n"));
+    update({ syncError: errors.join("\n"), syncFailed: errors.length > 0 });
   } catch (e) {
-    report(e);
+    update({ syncError: String(e), syncFailed: true });
   } finally {
     await refresh().catch(report);
     update({ busy: false });

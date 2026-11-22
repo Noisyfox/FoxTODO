@@ -9,7 +9,7 @@ pub fn segment(v: &str) -> String {
     percent_encoding::utf8_percent_encode(v, percent_encoding::NON_ALPHANUMERIC).to_string()
 }
 pub async fn response(q: RequestBuilder) -> Result<Response> {
-    let r = q.send().await.map_err(|e| err(e.without_url()))?;
+    let r = crate::network::send(q, "Microsoft Graph").await?;
     checked_response(r).await
 }
 async fn checked_response(r: Response) -> Result<Response> {
@@ -75,12 +75,10 @@ impl Graph {
             return Err("文件夹名称包含不可用的字符或以句点结尾".into());
         }
         let path = format!("/me/drive/items/{}/children", segment(parent));
-        let reply = self
-            .request(Method::POST, &path)
-            .json(&json!({"name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"}))
-            .send()
-            .await
-            .map_err(|e| err(e.without_url()))?;
+        let request = self.request(Method::POST, &path).json(
+            &json!({"name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"}),
+        );
+        let reply = crate::network::send(request, "OneDrive 创建文件夹").await?;
         if reply.status() == reqwest::StatusCode::CONFLICT {
             return Err("创建冲突，请检查当前目录是否已有同名文件或文件夹".into());
         }
@@ -204,7 +202,7 @@ impl Cloud for Graph {
                     }
                 }
             }
-            let reply = response(
+            let reply = crate::network::send(
                 self.http
                     .put(url.clone())
                     .header(
@@ -212,8 +210,10 @@ impl Cloud for Graph {
                         format!("bytes {}-{}/{}", start, start + part.len() - 1, bytes.len()),
                     )
                     .body(part.to_vec()),
+                "OneDrive 文件上传",
             )
             .await?;
+            let reply = checked_response(reply).await?;
             if is_last {
                 return saved_version(reply).await;
             }

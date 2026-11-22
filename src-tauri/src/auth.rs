@@ -26,12 +26,11 @@ fn key(drive: &str, client: &str) -> String {
     format!("refresh-{}", hash(format!("{drive}/{client}")))
 }
 async fn grant(http: &Client, route: &str, params: &[(&str, &str)]) -> Result<Value> {
-    let r = http
-        .post(format!("{IDP}/{route}"))
-        .form(params)
-        .send()
-        .await
-        .map_err(|e| err(e.without_url()))?;
+    let r = crate::network::send(
+        http.post(format!("{IDP}/{route}")).form(params),
+        "微软账户验证",
+    )
+    .await?;
     let ok = r.status().is_success();
     let v: Value = r.json().await.map_err(err)?;
     if !ok && v["error"].is_null() {
