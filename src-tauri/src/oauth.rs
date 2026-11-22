@@ -73,8 +73,24 @@ pub async fn authorize(app: &AppHandle, client: &str, tasks: bool) -> Result<Aut
     ))
     .map_err(err)?;
     #[cfg(target_os = "android")]
-    let redirect = Url::parse("msauth://io.noisyfox.foxtodo/q%2B8H2dckkpGcwQ%2FaQxD%2BN2SH2hs%3D")
-        .map_err(err)?;
+    let redirect = {
+        // The deep-link plugin generates the Android intent filter from this same config.
+        let config = app.config();
+        let signature = config
+            .plugins
+            .0
+            .get("deep-link")
+            .and_then(|plugin| plugin.pointer("/mobile/0/path/0"))
+            .and_then(|path| path.as_str())
+            .and_then(|path| path.strip_prefix('/'))
+            .ok_or("缺少 Android 登录回调的签名证书配置")?;
+        Url::parse(&format!(
+            "msauth://{}/{}",
+            config.identifier,
+            crate::graph::segment(signature)
+        ))
+        .map_err(err)?
+    };
 
     let mut url = Url::parse(&format!("{IDP}/authorize")).map_err(err)?;
     url.query_pairs_mut().extend_pairs([

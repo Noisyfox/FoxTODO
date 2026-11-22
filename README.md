@@ -9,7 +9,7 @@ FoxTODO 是面向 Windows、macOS 和 Android 的 Tauri 2 任务应用。无需�
 ### 发布者一次性配置
 
 1. 在 Microsoft Entra 创建仅支持个人 Microsoft 帐户的应用注册，或打开已有的 FoxTODO 注册。使用其「应用程序(客户端) ID」。[注册应用](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
-2. 在「身份验证」中配置原生公共客户端。Windows 和 macOS 的「移动和桌面应用程序」使用 `http://localhost`，实际登录时监听本机临时端口。Android 使用浏览器 Custom Tab，在「Android」平台填写包名 `io.noisyfox.foxtodo` 和签名证书的 SHA-1 Base64 哈希。当前测试包的哈希为 `q+8H2dckkpGcwQ/aQxD+N2SH2hs=`。更换签名证书时，需要同步更新 Azure 注册、Android 深层链接路径和原生端授权请求中的回调 URI。三端使用授权码 + PKCE（S256），无需客户端密钥或托管服务器。[微软原生应用回调配置](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
+2. 在「身份验证」中配置原生公共客户端。Windows 和 macOS 的「移动和桌面应用程序」使用 `http://localhost`，实际登录时监听本机临时端口。Android 使用浏览器 Custom Tab，在「Android」平台填写包名 `io.noisyfox.foxtodo` 和签名证书的 SHA-1 Base64 哈希。当前测试包的哈希为 `q+8H2dckkpGcwQ/aQxD+N2SH2hs=`。正式包使用下方 CI 配置的签名证书。Android 原生授权请求和系统回调从同一份深层链接配置读取证书哈希。三端使用授权码 + PKCE（S256），无需客户端密钥或托管服务器。[微软原生应用回调配置](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
 3. 打开「API 权限 → 添加权限 → Microsoft Graph → 委托的权限」，添加 Files.ReadWrite 和 Tasks.Read。用户首次连接时授权文件读写，并通过 offline_access 保持登录；只在主动导入时请求 Tasks.Read。[配置 Graph 委托权限](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-configure-app-access-web-apis)
 4. 将公开的客户端 ID 单独写一行到 [microsoft-client-id.txt](src-tauri/microsoft-client-id.txt)，然后重新构建三端安装包。也可在编译 Rust 客户端的环境中设置 `FOXTODO_CLIENT_ID`。同一注册可用于三个平台。未配置 ID 的构建可用于本机离线编辑。
 
@@ -40,3 +40,11 @@ FoxTODO 是面向 Windows、macOS 和 Android 的 Tauri 2 任务应用。无需�
 前端使用 React、shadcn/ui 和 Tailwind CSS 4。共享控件位于 `src/components/ui`，主题在 `src/style.css` 中配置。
 
 Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模拟测试覆盖响应丢失、上传期间编辑、并发提交和删除冲突。真实账号的权限、上传会话提交行为和附件导入仍需使用个人 OneDrive 验收。
+
+## GitHub Actions 构建
+
+推送任意分支、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
+
+正式签名使用 GitHub Environment `android-release`，其部署规则仅允许 `main` 分支。该环境内的 `ANDROID_KEYSTORE_BASE64` 是 PKCS#12 密钥库的 Base64 编码，`ANDROID_KEYSTORE_PASSWORD` 是密钥库密码，别名为 `foxtodo`。签名任务使用同一次运行生成的 APK，签名后会验证 APK 签名以及 Android 登录回调与实际签名证书是否一致。
+
+在 Microsoft Entra 的 FoxTODO 应用注册中，进入「身份验证」，为包名 `io.noisyfox.foxtodo` 添加 Android 签名哈希 `/1zoPBCNDNq7tO3p9GPPso07eXY=`，保留原有调试回调。此值是正式证书的 SHA-1 Base64，开头的斜杠属于哈希。CI 使用 `src-tauri/tauri.android.release.conf.json`，本地普通调试构建继续使用 `src-tauri/tauri.android.conf.json`。

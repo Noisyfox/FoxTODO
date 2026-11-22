@@ -1,0 +1,13 @@
+name: Set up FoxTODO frontend
+description: Install the JavaScript toolchain and locked frontend dependencies
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+        package-manager-cache: false
+    - shell: bash
+      run: |
+        npm install --global --force pnpm@11.21.0
+        pnpm install --frozen-lockfile
