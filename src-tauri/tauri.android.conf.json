@@ -1,0 +1,13 @@
+{
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": ["msauth"],
+          "host": "io.noisyfox.foxtodo",
+          "path": ["/q+8H2dckkpGcwQ/aQxD+N2SH2hs="]
+        }
+      ]
+    }
+  }
+}

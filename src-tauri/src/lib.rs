@@ -1,6 +1,7 @@
 mod auth;
 mod graph;
 mod import;
+mod oauth;
 mod reminders;
 mod store;
 mod sync;
@@ -18,6 +19,7 @@ struct App {
     store: Mutex<Store>,
     auth: AsyncMutex<Auth>,
     operation: AsyncMutex<()>,
+    login_attempt: Mutex<Option<(Uuid, tokio::sync::oneshot::Sender<()>)>>,
     http: Client,
 }
 impl App {
@@ -78,19 +80,48 @@ async fn resolve(app: State<'_, App>, id: Uuid, revision: u64, choice: String) -
     guard(&app.store)?.resolve(id, revision, &choice)
 }
 #[tauri::command]
-async fn login(app: State<'_, App>, import_tasks: bool) -> Result<Value> {
-    let client = login_client(guard(&app.store)?.settings.binding.as_ref())
+async fn login(
+    handle: AppHandle,
+    app: State<'_, App>,
+    import_tasks: bool,
+    attempt: Uuid,
+) -> Result<String> {
+    let binding = guard(&app.store)?.settings.binding.clone();
+    let client = login_client(binding.as_ref())
         .ok_or("此版本尚未启用 OneDrive 登录")?
         .to_owned();
-    app.auth
-        .lock()
-        .await
-        .begin(&app.http, client, import_tasks)
-        .await
+    let (cancel, cancelled) = tokio::sync::oneshot::channel();
+    *app.login_attempt.lock().map_err(err)? = Some((attempt, cancel));
+    let sign_in = async {
+        let grant = oauth::authorize(&handle, &client, import_tasks).await?;
+        let expected = binding
+            .as_ref()
+            .filter(|_| import_tasks)
+            .map(|b| b.drive.as_str());
+        app.auth
+            .lock()
+            .await
+            .exchange(&handle, &app.http, &client, grant, expected)
+            .await
+    };
+    let result = tokio::select! {
+        biased;
+        _ = cancelled => Err("已取消登录".into()),
+        result = sign_in => result,
+    };
+    let mut active = app.login_attempt.lock().map_err(err)?;
+    if active.as_ref().is_some_and(|(id, _)| *id == attempt) {
+        active.take();
+    }
+    result
 }
 #[tauri::command]
-async fn poll_login(handle: AppHandle, app: State<'_, App>) -> Result<Value> {
-    app.auth.lock().await.poll(&handle, &app.http).await
+fn cancel_login(app: State<App>, attempt: Uuid) -> Result<()> {
+    let mut active = app.login_attempt.lock().map_err(err)?;
+    if active.as_ref().is_some_and(|(id, _)| *id == attempt) {
+        active.take();
+    }
+    Ok(())
 }
 #[tauri::command]
 async fn folders(app: State<'_, App>, parent: Option<String>) -> Result<Value> {
@@ -154,10 +185,38 @@ async fn synchronize(handle: AppHandle, app: State<'_, App>) -> Result<Vec<Strin
     }
     Ok(errors)
 }
+// A first import can write to the offline workspace before a sync folder is chosen.
+async fn import_graph(
+    app: &App,
+    handle: &AppHandle,
+    drive: &str,
+    workspace: Option<&Binding>,
+) -> Result<Graph> {
+    if guard(&app.store)?.settings.binding.as_ref() != workspace {
+        return Err("当前工作区已切换".into());
+    }
+    if let Some(b) = workspace {
+        if b.drive != drive {
+            return Err("请选择数据目录所属的微软账号".into());
+        }
+        return app.graph(handle, b, true).await;
+    }
+    let auth = app.auth.lock().await;
+    let session = auth
+        .session
+        .as_ref()
+        .filter(|s| s.drive == drive && s.tasks)
+        .ok_or("请重新登录以读取 Microsoft To Do")?;
+    Ok(session.graph.clone())
+}
 #[tauri::command]
-async fn import_lists(handle: AppHandle, app: State<'_, App>) -> Result<Value> {
-    let b = app.binding()?;
-    let g = app.graph(&handle, &b, true).await?;
+async fn import_lists(
+    handle: AppHandle,
+    app: State<'_, App>,
+    drive: String,
+    workspace: Option<Binding>,
+) -> Result<Value> {
+    let g = import_graph(&app, &handle, &drive, workspace.as_ref()).await?;
     Ok(json!(g.pages("/me/todo/lists").await?))
 }
 #[tauri::command]
@@ -165,10 +224,11 @@ async fn import_selected(
     handle: AppHandle,
     app: State<'_, App>,
     ids: Vec<String>,
+    drive: String,
+    workspace: Option<Binding>,
 ) -> Result<Value> {
     let _op = app.operation.lock().await;
-    let b = app.binding()?;
-    let g = app.graph(&handle, &b, true).await?;
+    let g = import_graph(&app, &handle, &drive, workspace.as_ref()).await?;
     let mut imported = 0;
     let mut skipped = 0;
     let mut errors = vec![];
@@ -180,13 +240,13 @@ async fn import_selected(
             continue;
         }
         if guard(&app.store)?
-            .get(import::list_id(&b.drive, id))?
+            .get(import::list_id(&drive, id))?
             .is_some()
         {
             skipped += 1;
             continue;
         }
-        match import::fetch(&g, &b.drive, &list).await {
+        match import::fetch(&g, &drive, &list).await {
             Ok(doc) => {
                 guard(&app.store)?.save(&Record::new(doc))?;
                 imported += 1
@@ -198,7 +258,10 @@ async fn import_selected(
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -210,6 +273,7 @@ pub fn run() {
                 store: Mutex::new(store),
                 auth: Default::default(),
                 operation: Default::default(),
+                login_attempt: Default::default(),
                 http: Client::builder().timeout(Duration::from_secs(90)).build()?,
             });
             Ok(())
@@ -219,7 +283,7 @@ pub fn run() {
             save_list,
             resolve,
             login,
-            poll_login,
+            cancel_login,
             folders,
             bind,
             synchronize,

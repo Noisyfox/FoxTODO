@@ -4,12 +4,12 @@ FoxTODO 是面向 Windows、macOS 和 Android 的 Tauri 2 任务应用。无需�
 
 ## 连接微软账号
 
-打开 FoxTODO 的 OneDrive 面板，点击「连接个人 OneDrive」，在微软登录页输入应用显示的一次性代码，使用自己的个人微软账号授权，再回到应用选择数据目录。每个用户使用自己的 OneDrive。要导入历史任务，在同一面板选择「从 Microsoft To Do 导入」，授权后勾选清单。
+在 OneDrive 面板点击「从 Microsoft To Do 导入」，用微软个人账号授权。FoxTODO 自动返回清单选择界面，导入勾选的清单。首次使用可以先导入到本机，再点击「连接个人 OneDrive」选择同步目录。
 
 ### 发布者一次性配置
 
-1. 使用有应用注册权限的开发者账号登录 Microsoft Entra 管理中心，进入「Entra ID → 应用注册 → 新注册」。名称填 FoxTODO，受支持的账户类型选择「仅个人 Microsoft 帐户」，重定向 URI 留空。注册完成后从「概述」复制「应用程序(客户端) ID」。[注册应用](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
-2. 在该应用的「身份验证」设置中启用「允许公共客户端流」，保存。FoxTODO 使用设备授权码流程，无需客户端密钥或回调服务器。[公共客户端配置](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-registration) · [设备授权流程](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)
+1. 在 Microsoft Entra 创建仅支持个人 Microsoft 帐户的应用注册，或打开已有的 FoxTODO 注册。使用其「应用程序(客户端) ID」。[注册应用](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
+2. 在「身份验证」中配置原生公共客户端。Windows 和 macOS 的「移动和桌面应用程序」使用 `http://localhost`，实际登录时监听本机临时端口。Android 使用浏览器 Custom Tab，在「Android」平台填写包名 `io.noisyfox.foxtodo` 和签名证书的 SHA-1 Base64 哈希。当前测试包的哈希为 `q+8H2dckkpGcwQ/aQxD+N2SH2hs=`。更换签名证书时，需要同步更新 Azure 注册、Android 深层链接路径和原生端授权请求中的回调 URI。三端使用授权码 + PKCE（S256），无需客户端密钥或托管服务器。[微软原生应用回调配置](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
 3. 打开「API 权限 → 添加权限 → Microsoft Graph → 委托的权限」，添加 Files.ReadWrite 和 Tasks.Read。用户首次连接时授权文件读写，并通过 offline_access 保持登录；只在主动导入时请求 Tasks.Read。[配置 Graph 委托权限](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-configure-app-access-web-apis)
 4. 将公开的客户端 ID 单独写一行到 [microsoft-client-id.txt](src-tauri/microsoft-client-id.txt)，然后重新构建三端安装包。也可在编译 Rust 客户端的环境中设置 `FOXTODO_CLIENT_ID`。同一注册可用于三个平台。未配置 ID 的构建可用于本机离线编辑。
 

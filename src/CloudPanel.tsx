@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Cloud,
   Folder,
@@ -10,20 +9,15 @@ import {
   LogIn,
 } from "lucide-react";
 import { refresh, sync } from "./session";
-import type { View } from "./model";
+import { uid, type View } from "./model";
 interface Dir {
   id: string;
   name: string;
   children: { id: string; name: string }[];
 }
-interface Login {
-  code: string;
-  url: string;
-  interval: number;
-  expires: number;
-}
 export function CloudPanel({ view, close }: { view: View; close: () => void }) {
-  const [device, setDevice] = useState<Login | null>(null),
+  const [signingIn, setSigningIn] = useState(false),
+    [importDrive, setImportDrive] = useState(""),
     [dir, setDir] = useState<Dir | null>(null),
     [parents, setParents] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
@@ -33,12 +27,17 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
     ),
     [selected, setSelected] = useState<string[]>([]);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  const attempt = useRef<string | null>(null);
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+      if (attempt.current)
+        void invoke("cancel_login", { attempt: attempt.current }).catch(
+          () => {},
+        );
+    };
+  }, []);
   async function act(fn: () => Promise<void>) {
     setBusy(true);
     setMsg("");
@@ -54,39 +53,34 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
     setDir(await invoke<Dir>("folders", { parent: id }));
   }
   async function signin(tasks: boolean) {
-    const result = await invoke<Login>("login", {
-      importTasks: tasks,
-    });
-    setDevice(result);
-    const end = Date.now() + result.expires * 1000;
-    let delay = (result.interval || 5) * 1000;
+    const id = uid();
+    attempt.current = id;
+    setSigningIn(true);
     try {
-      while (Date.now() < end) {
-        await new Promise((r) => setTimeout(r, delay));
-        if (!live.current) return;
-        const auth = await invoke<{
-          pending?: boolean;
-          slow?: boolean;
-          drive?: string;
-        }>("poll_login");
-        if (auth.slow) delay += 5000;
-        if (auth.pending) continue;
-        if (tasks) {
-          if (auth.drive !== view.binding?.drive)
-            throw Error("请选择数据目录所属的微软账号");
-          const imported =
-            await invoke<{ id: string; displayName: string }[]>("import_lists");
-          setLists(imported);
-          setSelected(imported.map((i) => i.id));
-        } else {
-          setParents([]);
-          await directory(null);
-        }
-        return;
+      const drive = await invoke<string>("login", {
+        importTasks: tasks,
+        attempt: id,
+      });
+      if (!live.current) return;
+      setSigningIn(false);
+      if (tasks) {
+        const imported = await invoke<{ id: string; displayName: string }[]>(
+          "import_lists",
+          {
+            drive,
+            workspace: view.binding,
+          },
+        );
+        setImportDrive(drive);
+        setLists(imported);
+        setSelected([]);
+      } else {
+        setParents([]);
+        await directory(null);
       }
-      throw Error("登录码已过期，请重试");
     } finally {
-      if (live.current) setDevice(null);
+      attempt.current = null;
+      if (live.current) setSigningIn(false);
     }
   }
   return (
@@ -96,19 +90,8 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
       {view.binding && (
         <p className="hint">当前数据目录 · {view.binding.label}</p>
       )}
-      {device ? (
-        <>
-          <p>在微软登录页输入一次性代码，然后回到 FoxTODO。</p>
-          <strong className="code">{device.code}</strong>
-          <button
-            className="primary"
-            onClick={() =>
-              void openUrl(device.url).catch((e) => setMsg(String(e)))
-            }
-          >
-            打开微软登录页
-          </button>
-        </>
+      {signingIn ? (
+        <p role="status">请在微软登录页完成授权，FoxTODO 会自动继续。</p>
       ) : dir ? (
         <>
           <h3>选择数据目录</h3>
@@ -192,7 +175,11 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                   imported: number;
                   skipped: number;
                   errors: string[];
-                }>("import_selected", { ids: selected });
+                }>("import_selected", {
+                  ids: selected,
+                  drive: importDrive,
+                  workspace: view.binding,
+                });
                 await refresh();
                 void sync();
                 setLists(null);
@@ -216,7 +203,9 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
             在每台设备选择同一目录。每个清单保存为一个 JSON 文件。
           </p>
           {!view.oneDriveAvailable && (
-            <p className="message">此版本尚未启用 OneDrive 登录，清单仍可保存在本机。</p>
+            <p className="message">
+              此版本尚未启用 OneDrive 登录，清单仍可保存在本机。
+            </p>
           )}
           <button
             disabled={busy || !view.oneDriveAvailable}
@@ -226,7 +215,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
             <LogIn size={16} />
             {view.binding ? "登录并选择目录" : "连接个人 OneDrive"}
           </button>
-          {view.binding && (
+          {view.oneDriveAvailable && (
             <button
               disabled={busy}
               className="secondary"
@@ -237,7 +226,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
           )}
         </>
       )}
-      {busy && !device && <p role="status">处理中…</p>}
+      {busy && !signingIn && <p role="status">处理中…</p>}
       {msg && (
         <p className="message" role="status">
           {msg}

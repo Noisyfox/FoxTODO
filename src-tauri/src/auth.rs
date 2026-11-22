@@ -1,14 +1,10 @@
+use crate::oauth::{scopes, Authorization, IDP};
 use crate::{graph::Graph, store::*};
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri_plugin_secure_keystore::{ItemKey, SecureKeystoreExt, SetItemRequest};
-const IDP: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
-pub struct Pending {
-    client: String,
-    code: String,
-}
 pub struct Session {
     pub graph: Graph,
     pub drive: String,
@@ -18,7 +14,6 @@ pub struct Session {
 }
 #[derive(Default)]
 pub struct Auth {
-    pending: Option<Pending>,
     pub session: Option<Session>,
 }
 fn value(v: &Value, key: &str) -> Result<String> {
@@ -52,50 +47,31 @@ fn check(v: &Value) -> Result<()> {
     }
 }
 impl Auth {
-    pub async fn begin(&mut self, http: &Client, client: String, tasks: bool) -> Result<Value> {
-        let scope = if tasks {
-            "Files.ReadWrite Tasks.Read offline_access"
-        } else {
-            "Files.ReadWrite offline_access"
-        };
-        let v = grant(
-            http,
-            "devicecode",
-            &[("client_id", &client), ("scope", scope)],
-        )
-        .await?;
-        check(&v)?;
-        self.pending = Some(Pending {
-            client,
-            code: value(&v, "device_code")?,
-        });
-        Ok(
-            json!({"code":v["user_code"],"url":v["verification_uri"],"interval":v["interval"],"expires":v["expires_in"]}),
-        )
-    }
-    pub async fn poll(&mut self, app: &AppHandle, http: &Client) -> Result<Value> {
-        let p = self.pending.as_ref().ok_or("请重新登录")?;
-        let client = p.client.clone();
+    pub async fn exchange(
+        &mut self,
+        app: &AppHandle,
+        http: &Client,
+        client: &str,
+        auth: Authorization,
+        expected_drive: Option<&str>,
+    ) -> Result<String> {
         let v = grant(
             http,
             "token",
             &[
-                ("client_id", &client),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ("device_code", &p.code),
+                ("client_id", client),
+                ("grant_type", "authorization_code"),
+                ("code", &auth.code),
+                ("redirect_uri", &auth.redirect),
+                ("code_verifier", &auth.verifier),
             ],
         )
         .await?;
-        match v["error"].as_str() {
-            Some("authorization_pending") => return Ok(json!({"pending":true})),
-            Some("slow_down") => return Ok(json!({"pending":true,"slow":true})),
-            _ => check(&v)?,
-        }
-        let s = self.accept(app, http, &client, v, None).await?;
+        check(&v)?;
+        let s = self.accept(app, http, client, v, expected_drive).await?;
         let drive = s.drive.clone();
         self.session = Some(s);
-        self.pending = None;
-        Ok(json!({"drive":drive}))
+        Ok(drive)
     }
     async fn accept(
         &self,
@@ -160,11 +136,7 @@ impl Auth {
             .map_err(err)?
             .value
             .ok_or("请重新登录 OneDrive，本机修改已保留")?;
-        let scope = if tasks {
-            "Files.ReadWrite Tasks.Read offline_access"
-        } else {
-            "Files.ReadWrite offline_access"
-        };
+        let scope = scopes(tasks);
         let v = grant(
             http,
             "token",
