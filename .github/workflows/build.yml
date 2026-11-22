@@ -32,6 +32,13 @@ jobs:
       - uses: ./.github/actions/setup-frontend
       - run: rustup update stable --no-self-update
       - run: pnpm tauri build --ci --bundles ${{ matrix.bundle }}
+      - name: Verify the app signature inside the macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          mountpoint=$(mktemp -d "$RUNNER_TEMP/foxtodo-dmg.XXXXXX")
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" src-tauri/target/release/bundle/dmg/*.dmg
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          codesign --verify --deep --strict --verbose=2 -R='identifier "io.noisyfox.foxtodo"' "$mountpoint/FoxTODO.app"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: FoxTODO-${{ matrix.platform }}
