@@ -61,13 +61,44 @@ button svg {
   overflow: hidden;
 }
 .sidebar {
-  width: 235px;
+  position: relative;
   flex-shrink: 0;
   background: #eff2eb;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   padding: 29px 16px 16px;
+}
+.sidebar-divider {
+  position: absolute;
+  z-index: 3;
+  inset: 0 -5px 0 auto;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sidebar-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+.sidebar-divider:hover::after,
+.sidebar-divider.resizing::after,
+.sidebar-divider:focus-visible::after {
+  background: var(--green);
+}
+.sidebar-divider:focus-visible {
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .sidebar-divider {
+    right: -12px;
+    width: 24px;
+  }
 }
 .brand {
   display: flex;
@@ -664,17 +695,11 @@ h1 {
   }
 }
 @media (max-width: 900px) {
-  .sidebar {
-    width: 194px;
-  }
   .detail {
     width: 260px;
   }
   .content {
     padding: 27px 21px;
-  }
-  .with-detail .sidebar {
-    width: 164px;
   }
 }
 @media (max-width: 720px) {
@@ -682,14 +707,12 @@ h1 {
   .scrim {
     display: grid;
   }
-  .sidebar,
-  .with-detail .sidebar {
+  .sidebar {
     position: fixed;
     z-index: 5;
     top: 0;
     bottom: 0;
     left: 0;
-    width: 250px;
     transform: translateX(-105%);
     transition: transform 0.18s;
   }

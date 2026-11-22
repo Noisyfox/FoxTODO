@@ -55,6 +55,7 @@ import {
   taskItem,
   type OrderedItem,
 } from "./listOrder";
+import { Sidebar } from "./Sidebar";
 import { Detail } from "./Detail";
 import { reminders } from "./alarms";
 import "./style.css";
@@ -303,7 +304,7 @@ function App() {
           onClick={() => setNav(false)}
         />
       )}
-      <aside className={"sidebar " + (nav ? "shown" : "")}>
+      <Sidebar open={nav} withDetail={!!detail}>
         <div className="brand">
           <img src="/fox.svg" alt="" />
           FoxTODO
@@ -440,7 +441,7 @@ function App() {
             </button>
           </div>
         )}
-      </aside>
+      </Sidebar>
       <main>
         <header>
           <div className="breadcrumb">
