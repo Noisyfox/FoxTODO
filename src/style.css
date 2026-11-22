@@ -1,7 +1,7 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
 @source "./";
-@custom-variant drawer (@media (max-width: 720px));
+@custom-variant single-page (&:where([data-layout="pages"] *));
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
@@ -206,15 +206,9 @@
       padding: 27px 21px;
     }
   }
-  @media (max-width: 720px) {
-    .sidebar {
-      @apply fixed inset-y-0 left-0 z-5 -translate-x-[105%] transition-transform;
-    }
-    .sidebar.shown {
-      @apply translate-x-0;
-    }
-    .detail {
-      @apply fixed inset-y-0 right-0 z-2 shadow-xl;
+  .app[data-layout="pages"] {
+    .sidebar, .detail {
+      border: 0;
     }
     .content {
       padding: 22px 16px;

@@ -11,10 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { OptionCombobox } from "@/components/option-combobox";
 import { ListIconField } from "@/components/list-icon-field";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ArrowLeft,
   House,
   Sun,
   Star,
@@ -68,7 +69,8 @@ import {
   taskItem,
   type OrderedItem,
 } from "./listOrder";
-import { Sidebar, SidebarLayout } from "./Sidebar";
+import { Sidebar, SidebarLayout, useWorkspaceViewport } from "./Sidebar";
+import { hasOpenOverlay, useWorkspaceNavigation } from "./workspaceNavigation";
 import { Detail } from "./Detail";
 import { reminders } from "./alarms";
 import "./style.css";
@@ -88,15 +90,17 @@ const views: { id: string; name: string; icon: LucideIcon }[] = [
 ];
 function App() {
   const v = useSyncExternalStore(subscribe, current),
-    [active, select] = useState("day"),
-    [task, pick] = useState<{ list: string; id: string } | null>(null),
+    viewport = useWorkspaceViewport(),
+    {
+      page: { active, task, nav, search },
+      show,
+      closePage,
+    } = useWorkspaceNavigation(viewport.singlePage, v.platform === "android"),
     [modal, setModal] = useState(""),
     [input, setInput] = useState(""),
     [emoji, setEmoji] = useState(""),
     [group, setGroup] = useState(""),
     [entry, setEntry] = useState(""),
-    [search, setSearch] = useState(""),
-    [nav, setNav] = useState(false),
     [done, setDone] = useState(false),
     [sort, order] = useState("list"),
     [clock, setClock] = useState(() => new Date()),
@@ -106,32 +110,24 @@ function App() {
     findRef = useRef<HTMLInputElement>(null),
     menuTrigger = useRef<HTMLButtonElement>(null),
     dialogOpener = useRef<HTMLElement | null>(null);
+  function openNavigation() {
+    if (viewport.singlePage && !nav) show({ nav: true }, true);
+  }
+  const keys = useEffectEvent((e: KeyboardEvent) => {
+    if (e.defaultPrevented || hasOpenOverlay()) return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openNavigation();
+      requestAnimationFrame(() => findRef.current?.focus());
+    } else if (e.key === "Escape" && (nav || task)) {
+      closePage();
+    }
+  });
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 30000);
     const net = () => setOnline(navigator.onLine);
     window.addEventListener("offline", net);
     window.addEventListener("online", net);
-    const keys = (e: KeyboardEvent) => {
-      if (
-        e.defaultPrevented ||
-        document.querySelector(
-          '[data-slot="dialog-content"], [data-slot="dropdown-menu-content"], [data-slot="combobox-content"], [data-slot="popover-content"][data-state="open"]',
-        )
-      )
-        return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setNav(true);
-        setTimeout(() => findRef.current?.focus(), 0);
-      }
-      if (e.key === "Escape") {
-        setNav(false);
-
-        setModal("");
-        setConflict("");
-        pick(null);
-      }
-    };
     window.addEventListener("keydown", keys);
     return () => {
       clearInterval(timer);
@@ -190,10 +186,7 @@ function App() {
     c = v.records.find((r) => r.doc.id === conflict),
     conflicts = v.records.filter((r) => r.conflict);
   function go(id: string) {
-    select(id);
-    setNav(false);
-    setSearch("");
-    pick(null);
+    show({ active: id, nav: false, search: "", task: null }, nav);
 
     setDone(false);
   }
@@ -214,7 +207,6 @@ function App() {
         ? focused
         : null;
     setModal(m);
-    setNav(false);
 
     setInput(m === "rename" ? currentList?.doc.name || "" : "");
     setEmoji(m === "rename" ? currentList?.doc.emoji ?? "" : "");
@@ -267,7 +259,7 @@ function App() {
       <SortRow
         id={id}
         label={t.title || "未命名任务"}
-        onOpen={() => pick({ list: r.doc.id, id: t.id })}
+        onOpen={() => show({ task: { list: r.doc.id, id: t.id }, nav: false }, true)}
         key={id}
         className={
           "task " +
@@ -337,16 +329,18 @@ function App() {
                 ? "已保存到本机 · 待同步"
                 : "已同步";
   return (
-    <SidebarLayout withDetail={!!detail}>
-      {nav && (
-        <button
-          aria-label="关闭导航"
-          className="fixed inset-0 z-4 hidden bg-black/30 drawer:block"
-          onClick={() => setNav(false)}
-        />
-      )}
+    <SidebarLayout viewport={viewport} withDetail={!!detail}>
       <Sidebar open={nav}>
         <div className="flex items-center gap-2.5 px-2.5 pb-7 text-2xl font-bold tracking-tight text-primary [&_img]:size-9">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="hidden single-page:inline-flex"
+            title="返回"
+            onClick={closePage}
+          >
+            <ArrowLeft />
+          </Button>
           <img src="/fox.svg" alt="" />
           FoxTODO
         </div>
@@ -357,13 +351,13 @@ function App() {
             ref={findRef}
             placeholder="搜索任务"
             aria-label="搜索任务"
+            enterKeyHint="search"
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value);
-              pick(null);
+              show({ search: e.target.value, task: null });
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") setNav(false);
+              if (e.key === "Enter" && nav) show({ nav: false }, true);
             }}
           />
           {search ? (
@@ -372,7 +366,7 @@ function App() {
               size="icon-sm"
 
               title="清除搜索"
-              onClick={() => setSearch("")}
+              onClick={() => show({ search: "" })}
             >
               <X size={13} />
             </Button>
@@ -511,15 +505,19 @@ function App() {
           </div>
         )}
       </Sidebar>
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="workspace-header flex h-[65px] shrink-0 items-center justify-between gap-2.5 border-b px-[clamp(18px,3.7vw,54px)] drawer:h-[54px] drawer:px-3">
+      <main
+        className={
+          viewport.singlePage && (nav || detail) ? "hidden" : "flex min-w-0 flex-1 flex-col"
+        }
+      >
+        <header className="workspace-header flex h-[65px] shrink-0 items-center justify-between gap-2.5 border-b px-[clamp(18px,3.7vw,54px)] single-page:h-[54px] single-page:px-3">
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <Button
               variant="ghost"
               size="icon-sm"
-              className="hidden drawer:inline-flex"
+              className="hidden single-page:inline-flex"
               title="打开导航"
-              onClick={() => setNav(true)}
+              onClick={openNavigation}
             >
               <Menu size={20} />
             </Button>
@@ -712,13 +710,13 @@ function App() {
         </div>
       </main>
       {detail && cur && (
-        <Sidebar side="right">
+        <Sidebar side="right" open={!nav}>
           <Detail
             key={detail.id}
             t={detail}
             list={cur.doc.name}
             change={(fn) => editTask(cur, detail.id, fn)}
-            close={() => pick(null)}
+            close={closePage}
             remove={() => dialog("delete-task")}
           />
         </Sidebar>
@@ -864,7 +862,7 @@ function App() {
                       await mutate(cur.doc.id, (d) => {
                         d.tasks = d.tasks.filter((t) => t.id !== detail.id);
                       });
-                      pick(null);
+                      closePage();
                     }
                     setModal("");
                   } catch (e) {

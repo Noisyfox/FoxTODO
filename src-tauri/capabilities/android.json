@@ -1,0 +1,6 @@
+{
+  "identifier": "android-navigation",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["core:app:allow-exit"]
+}

@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { OptionCombobox } from "@/components/option-combobox";
 import { useEffect, useState } from "react";
-import { Star, Sun, Trash2, X, Plus, Paperclip, Download } from "lucide-react";
+import { ArrowLeft, Star, Sun, Trash2, X, Plus, Paperclip, Download } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { dateKey, uid, type Task, type Attachment } from "./model";
@@ -83,11 +83,20 @@ export function Detail({
   return (
     <div className="detail-content h-full overflow-auto">
       <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
-        <span>{list}</span>
         <Button
           variant="ghost"
           size="icon-sm"
-
+          className="hidden single-page:inline-flex"
+          title="返回任务列表"
+          onClick={close}
+        >
+          <ArrowLeft />
+        </Button>
+        <span className="single-page:mr-auto single-page:ml-2">{list}</span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="single-page:hidden"
           onClick={close}
           title="关闭任务详情"
         >

@@ -40,26 +40,39 @@ function usePanelWidth(
 
 type PanelWidth = ReturnType<typeof usePanelWidth>;
 const Layout = createContext<{
-  drawer: boolean;
+  singlePage: boolean;
   left: PanelWidth;
   right: PanelWidth;
 } | null>(null);
 
-export function SidebarLayout({
-  withDetail,
-  children,
-}: {
-  withDetail: boolean;
-  children: ReactNode;
-}) {
-  const [viewport, setViewport] = useState(() => window.innerWidth);
+function readViewport() {
+  return {
+    width: window.innerWidth,
+    singlePage: window.matchMedia(
+      "(max-width: 720px), (pointer: coarse) and (max-width: 1000px) and (max-height: 520px)",
+    ).matches,
+  };
+}
+
+export function useWorkspaceViewport() {
+  const [viewport, setViewport] = useState(readViewport);
   useEffect(() => {
-    const resize = () => setViewport(window.innerWidth);
+    const resize = () => setViewport(readViewport());
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
+  return viewport;
+}
 
-  const drawer = viewport <= 720;
+export function SidebarLayout({
+  viewport: { width: viewport, singlePage },
+  withDetail,
+  children,
+}: {
+  viewport: ReturnType<typeof readViewport>;
+  withDetail: boolean;
+  children: ReactNode;
+}) {
   const compact = viewport <= 900;
   // Docked panels share the space left after reserving the task list.
   const available = viewport - 320;
@@ -67,22 +80,20 @@ export function SidebarLayout({
   const reservedLeft = Math.min(160, Math.max(0, available - defaultDetail));
   const right = usePanelWidth(
     "foxtodo.detailWidth",
-    drawer ? 360 : defaultDetail,
+    defaultDetail,
     240,
-    Math.min(600, drawer ? viewport : available - reservedLeft),
+    Math.min(600, available - reservedLeft),
   );
   const left = usePanelWidth(
     "foxtodo.sidebarWidth",
-    drawer ? 250 : compact ? (withDetail ? 164 : 194) : 235,
+    compact ? (withDetail ? 164 : 194) : 235,
     160,
-    Math.min(
-      480,
-      drawer ? viewport - 40 : available - (withDetail ? right.width : 0),
-    ),
+    Math.min(480, available - (withDetail ? right.width : 0)),
   );
   return (
-    <Layout.Provider value={{ drawer, left, right }}>
+    <Layout.Provider value={{ singlePage, left, right }}>
       <div
+        data-layout={singlePage ? "pages" : "columns"}
         className={
           "app flex h-dvh overflow-hidden" + (withDetail ? " with-detail" : "")
         }
@@ -113,12 +124,16 @@ export function Sidebar({
   return (
     <aside
       id={id}
-      className={id + (isLeft && open ? " shown" : "")}
-      style={{ width }}
-      inert={layout.drawer && !open}
+      className={id}
+      style={
+        layout.singlePage
+          ? { width: "100%", display: open ? undefined : "none" }
+          : { width }
+      }
     >
       {children}
       <div
+        hidden={layout.singlePage}
         className={"sidebar-divider" + (draft !== null ? " resizing" : "")}
         role="separator"
         aria-label={isLeft ? "侧边栏宽度" : "任务详情栏宽度"}
