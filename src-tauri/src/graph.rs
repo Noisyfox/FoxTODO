@@ -49,6 +49,13 @@ impl Graph {
             .request(m, format!("{GRAPH}{path}"))
             .bearer_auth(&self.token)
     }
+    fn replace_content(&self, base: &Base, bytes: Vec<u8>) -> RequestBuilder {
+        let path = format!("/me/drive/items/{}/content", segment(&base.id));
+        self.request(Method::PUT, &path)
+            .header("If-Match", &base.etag)
+            .header("Content-Type", "application/json")
+            .body(bytes)
+    }
     pub async fn get(&self, path: &str) -> Result<Value> {
         response(self.request(Method::GET, path))
             .await?
@@ -151,23 +158,32 @@ impl Cloud for Graph {
         })
     }
     async fn upload(&self, parent: &str, doc: &Document, base: Option<&Base>) -> Result<Base> {
-        let name = format!("{}.json", doc.id);
-        let target = format!("/me/drive/items/{}:/{name}", segment(parent));
-        let existing = base.map(|b| format!("/me/drive/items/{}", segment(&b.id)));
-        let endpoint = existing.as_deref().unwrap_or(&target);
-        let behavior = if base.is_some() { "replace" } else { "fail" };
-        let item = json!({"@microsoft.graph.conflictBehavior":behavior,"name":name});
-        let route = if base.is_some() {
-            format!("{endpoint}/createUploadSession")
-        } else {
-            format!("{target}:/createUploadSession")
-        };
-        let mut request = self
-            .request(Method::POST, &route)
-            .json(&json!({"item":item,"deferCommit":base.is_some()}));
+        let bytes = doc.bytes()?;
+        // Graph accepts a single PUT of up to 250 MB. Keep the version condition
+        // on the content write itself when replacing an existing list.
         if let Some(b) = base {
-            request = request.header("If-Match", &b.etag)
+            if bytes.len() <= 250_000_000 {
+                return saved_version(response(self.replace_content(b, bytes)).await?).await;
+            }
         }
+
+        let request = match base {
+            Some(b) => self
+                .request(
+                    Method::POST,
+                    &format!("/me/drive/items/{}/createUploadSession", segment(&b.id)),
+                )
+                .header("If-Match", &b.etag),
+            None => {
+                let path = format!(
+                    "/me/drive/items/{}:/{}.json:/createUploadSession",
+                    segment(parent),
+                    doc.id
+                );
+                self.request(Method::POST, &path)
+            }
+        }
+        .json(&json!({"item": {"@microsoft.graph.conflictBehavior": "fail"}}));
         let session: Value = response(request).await?.json().await.map_err(err)?;
         let upload = session["uploadUrl"]
             .as_str()
@@ -176,10 +192,18 @@ impl Cloud for Graph {
         if url.scheme() != "https" {
             return Err("上传地址无效".into());
         }
-        let bytes = doc.bytes()?;
         let chunk = 10 * 320 * 1024;
         for (i, part) in bytes.chunks(chunk).enumerate() {
             let start = i * chunk;
+            let is_last = start + part.len() == bytes.len();
+            if is_last {
+                if let Some(b) = base {
+                    let path = format!("/me/drive/items/{}?$select=eTag", segment(&b.id));
+                    if self.get(&path).await?["eTag"].as_str() != Some(&b.etag) {
+                        return Err("上传期间云端清单已变化，将在下次同步时核对冲突".into());
+                    }
+                }
+            }
             let reply = response(
                 self.http
                     .put(url.clone())
@@ -190,23 +214,11 @@ impl Cloud for Graph {
                     .body(part.to_vec()),
             )
             .await?;
-            if base.is_none() && start + part.len() == bytes.len() {
+            if is_last {
                 return saved_version(reply).await;
             }
         }
-        // OneDrive Personal's explicit commit accepts sourceUrl and the version precondition.
-        let mut commit = self
-            .request(Method::PUT, endpoint)
-            .query(&[("@microsoft.graph.conflictBehavior", behavior)])
-            .json(&json!({
-                "name": name,
-                "@microsoft.graph.sourceUrl": upload,
-                "@microsoft.graph.conflictBehavior": behavior
-            }));
-        if let Some(b) = base {
-            commit = commit.header("If-Match", &b.etag)
-        }
-        saved_version(response(commit).await?).await
+        Err("清单内容为空".into())
     }
     async fn delete(&self, b: &Base) -> Result<()> {
         response(
@@ -229,4 +241,31 @@ async fn saved_version(reply: Response) -> Result<Base> {
         id: saved.id,
         etag: saved.etag,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replacement_puts_raw_json_to_item_content_with_the_saved_version() {
+        let graph = Graph {
+            http: Client::new(),
+            token: "test".into(),
+        };
+        let base = Base {
+            id: "drive!item".into(),
+            etag: r#""old-version""#.into(),
+        };
+        let json = br#"{"name":"list","tasks":[]}"#;
+        let request = graph.replace_content(&base, json.to_vec()).build().unwrap();
+        assert_eq!(request.method(), Method::PUT);
+        assert_eq!(
+            request.url().as_str(),
+            format!("{GRAPH}/me/drive/items/drive%21item/content")
+        );
+        assert_eq!(request.headers()["If-Match"], base.etag);
+        assert_eq!(request.headers()["Content-Type"], "application/json");
+        assert_eq!(request.body().unwrap().as_bytes(), Some(json.as_slice()));
+    }
 }
