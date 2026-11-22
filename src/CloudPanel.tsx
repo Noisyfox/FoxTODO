@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   Cloud,
   Folder,
+  FolderPlus,
   ChevronRight,
   ArrowLeft,
   Download,
@@ -19,6 +20,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
   const [signingIn, setSigningIn] = useState(false),
     [importDrive, setImportDrive] = useState(""),
     [dir, setDir] = useState<Dir | null>(null),
+    [folderName, setFolderName] = useState<string | null>(null),
     [parents, setParents] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [msg, setMsg] = useState(""),
@@ -97,7 +99,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
           <h3>选择数据目录</h3>
           <div className="dir-head">
             <button
-              disabled={!parents.length || busy}
+              disabled={!parents.length || busy || folderName !== null}
               className="icon"
               title="上一级"
               onClick={() =>
@@ -116,7 +118,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               <button
                 className="folder"
                 key={f.id}
-                disabled={busy}
+                disabled={busy || folderName !== null}
                 onClick={() =>
                   void act(async () => {
                     await directory(f.id);
@@ -130,20 +132,85 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               </button>
             ))}
           </div>
-          <button
-            disabled={busy}
-            className="primary"
-            onClick={() =>
-              void act(async () => {
-                await invoke("bind", { folder: dir.id });
-                await refresh();
-                void sync();
-                close();
-              })
-            }
-          >
-            使用此目录
-          </button>
+          {folderName === null ? (
+            <>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setMsg("");
+                  setFolderName("");
+                }}
+              >
+                <FolderPlus size={16} />
+                新建文件夹
+              </button>
+              <button
+                disabled={busy}
+                className="primary"
+                onClick={() =>
+                  void act(async () => {
+                    await invoke("bind", { folder: dir.id });
+                    await refresh();
+                    void sync();
+                    close();
+                  })
+                }
+              >
+                使用此目录
+              </button>
+            </>
+          ) : (
+            <form
+              className="new-cloud-folder"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (busy || !folderName.trim()) return;
+                void act(async () => {
+                  const folder = await invoke<{ id: string; name: string }>(
+                    "create_folder",
+                    {
+                      parent: dir.id,
+                      name: folderName.trim(),
+                    },
+                  );
+                  setParents([...parents, dir.id]);
+                  setDir({ id: folder.id, name: folder.name, children: [] });
+                  setFolderName(null);
+                });
+              }}
+            >
+              <label htmlFor="cloud-folder-name">新文件夹名称</label>
+              <input
+                id="cloud-folder-name"
+                autoFocus
+                autoComplete="off"
+                value={folderName}
+                disabled={busy}
+                onChange={(event) => setFolderName(event.target.value)}
+              />
+              <div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setFolderName(null);
+                    setMsg("");
+                  }}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={busy || !folderName.trim()}
+                >
+                  创建
+                </button>
+              </div>
+            </form>
+          )}
         </>
       ) : lists ? (
         <>
@@ -159,7 +226,9 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                     selected.length > 0 && selected.length < lists.length;
               }}
               onChange={(e) =>
-                setSelected(e.target.checked ? lists.map((list) => list.id) : [])
+                setSelected(
+                  e.target.checked ? lists.map((list) => list.id) : [],
+                )
               }
             />
             全选

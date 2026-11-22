@@ -148,6 +148,12 @@ async fn folders(app: State<'_, App>, parent: Option<String>) -> Result<Value> {
     Ok(json!({"id":p,"name":meta["name"],"children":children}))
 }
 #[tauri::command]
+async fn create_folder(app: State<'_, App>, parent: String, name: String) -> Result<Item> {
+    let auth = app.auth.lock().await;
+    let session = auth.session.as_ref().ok_or("请先登录")?;
+    session.graph.create_folder(&parent, &name).await
+}
+#[tauri::command]
 async fn bind(app: State<'_, App>, folder: String) -> Result<()> {
     let _op = app.operation.lock().await;
     let a = app.auth.lock().await;
@@ -285,6 +291,7 @@ pub fn run() {
             login,
             cancel_login,
             folders,
+            create_folder,
             bind,
             synchronize,
             import_lists,

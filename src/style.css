@@ -571,6 +571,25 @@ h1 {
   max-height: 280px;
   overflow: auto;
 }
+.new-cloud-folder {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.new-cloud-folder input {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font: inherit;
+}
+.new-cloud-folder > div {
+  display: flex;
+  gap: 8px;
+}
+.new-cloud-folder button {
+  margin: 0;
+}
 .select-all-lists,
 .choices label,
 .folder,

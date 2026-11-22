@@ -10,6 +10,9 @@ pub fn segment(v: &str) -> String {
 }
 pub async fn response(q: RequestBuilder) -> Result<Response> {
     let r = q.send().await.map_err(|e| err(e.without_url()))?;
+    checked_response(r).await
+}
+async fn checked_response(r: Response) -> Result<Response> {
     if r.status().is_success() {
         return Ok(r);
     }
@@ -52,6 +55,29 @@ impl Graph {
             .json()
             .await
             .map_err(err)
+    }
+    pub async fn create_folder(&self, parent: &str, name: &str) -> Result<Item> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("请输入文件夹名称".into());
+        }
+        if name.ends_with('.')
+            || name.contains(['"', '*', ':', '<', '>', '?', '/', '\\', '|'])
+            || name.chars().any(char::is_control)
+        {
+            return Err("文件夹名称包含不可用的字符或以句点结尾".into());
+        }
+        let path = format!("/me/drive/items/{}/children", segment(parent));
+        let reply = self
+            .request(Method::POST, &path)
+            .json(&json!({"name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"}))
+            .send()
+            .await
+            .map_err(|e| err(e.without_url()))?;
+        if reply.status() == reqwest::StatusCode::CONFLICT {
+            return Err("创建冲突，请检查当前目录是否已有同名文件或文件夹".into());
+        }
+        checked_response(reply).await?.json().await.map_err(err)
     }
     pub async fn pages(&self, path: &str) -> Result<Vec<Value>> {
         let mut url = format!("{GRAPH}{path}");
