@@ -15,7 +15,7 @@ cp packages/FoxTODO-macos-arm64/*.dmg nightly/FoxTODO-macos-arm64-nightly.dmg
 cp packages/FoxTODO-android-arm64-signed/FoxTODO-android-arm64-release.apk nightly/FoxTODO-android-arm64-nightly.apk
 
 title="FoxTODO Nightly"
-notes="来自 [`main` 的提交 ${GITHUB_SHA:0:7}]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA) · [构建记录]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+notes="来自 [main 的提交 ${GITHUB_SHA:0:7}]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA) · [构建记录]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
 if ! gh release view "$tag" --json id >/dev/null; then
   gh release create "$tag" nightly/* --target "$GITHUB_SHA" --title "$title" \
     --notes "$notes" --prerelease --latest=false
