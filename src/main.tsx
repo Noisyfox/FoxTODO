@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { OptionCombobox } from "@/components/option-combobox";
+import { ListIconField } from "@/components/list-icon-field";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -90,6 +91,7 @@ function App() {
     [task, pick] = useState<{ list: string; id: string } | null>(null),
     [modal, setModal] = useState(""),
     [input, setInput] = useState(""),
+    [emoji, setEmoji] = useState(""),
     [group, setGroup] = useState(""),
     [entry, setEntry] = useState(""),
     [search, setSearch] = useState(""),
@@ -214,6 +216,7 @@ function App() {
     setNav(false);
 
     setInput(m === "rename" ? currentList?.doc.name || "" : "");
+    setEmoji(m === "rename" ? currentList?.doc.emoji ?? "" : "");
     setGroup(m === "rename" ? currentList?.doc.group || "" : "");
   }
   function add() {
@@ -839,6 +842,7 @@ function App() {
                   try {
                     if (modal === "new") {
                       const d = newList(input.trim());
+                      if (emoji.trim()) d.emoji = emoji.trim();
                       d.group = group.trim();
                       await mutate(d.id, () => {}, d);
                       go(d.id);
@@ -846,6 +850,7 @@ function App() {
                     if (modal === "rename" && currentList)
                       await mutate(active, (d) => {
                         d.name = input.trim();
+                        d.emoji = emoji.trim();
                         d.group = group.trim();
                       });
                     if (modal === "delete-list" && currentList) {
@@ -887,6 +892,7 @@ function App() {
                         placeholder="例如：购物清单"
                       />
                     </label>
+                    <ListIconField value={emoji} onChange={setEmoji} />
                     <label className="field">
                       分组
                       <Input
