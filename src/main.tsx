@@ -300,64 +300,66 @@ function App() {
             <kbd>{v.platform === "macos" ? "⌘ K" : "Ctrl K"}</kbd>
           )}
         </div>
-        <nav>
-          {views.map((x) => (
-            <button
-              key={x.id}
-              className={active === x.id && !needle ? "active" : ""}
-              onClick={() => go(x.id)}
-            >
-              <x.icon size={18} />
-              {x.name}
-              <small>
-                {flat.filter(({ t }) => !t.done && matches(x.id, t)).length ||
-                  ""}
-              </small>
-            </button>
-          ))}
-        </nav>
-        <div className="lists-header">
-          <h3>我的清单</h3>
-          <button
-            className="icon"
-            title="新建清单"
-            onClick={() => dialog("new")}
-          >
-            <Plus size={17} />
-          </button>
-        </div>
-        <nav className="lists">
-          {Array.from(new Set(rows.map((r) => r.doc.group)))
-            .sort()
-            .map((g) => (
-              <div key={g}>
-                {g && <h4>{g}</h4>}
-                {rows
-                  .filter((r) => r.doc.group === g)
-                  .map((r) => (
-                    <button
-                      key={r.doc.id}
-                      onClick={() => go(r.doc.id)}
-                      className={active === r.doc.id ? "active" : ""}
-                    >
-                      <ListIcon size={16} />
-                      <span>{r.doc.name}</span>
-                      {r.conflict ? (
-                        <AlertTriangle size={14} />
-                      ) : (
-                        <small>
-                          {r.doc.tasks.filter((t) => !t.done).length || ""}
-                        </small>
-                      )}
-                    </button>
-                  ))}
-              </div>
+        <div className="sidebar-scroll">
+          <nav>
+            {views.map((x) => (
+              <button
+                key={x.id}
+                className={active === x.id && !needle ? "active" : ""}
+                onClick={() => go(x.id)}
+              >
+                <x.icon size={18} />
+                {x.name}
+                <small>
+                  {flat.filter(({ t }) => !t.done && matches(x.id, t)).length ||
+                    ""}
+                </small>
+              </button>
             ))}
-          <button className="new-list" onClick={() => dialog("new")}>
-            <Plus size={16} />
-            新建清单
-          </button>
-        </nav>
+          </nav>
+          <div className="lists-header">
+            <h3>我的清单</h3>
+            <button
+              className="icon"
+              title="新建清单"
+              onClick={() => dialog("new")}
+            >
+              <Plus size={17} />
+            </button>
+          </div>
+          <nav>
+            {Array.from(new Set(rows.map((r) => r.doc.group)))
+              .sort()
+              .map((g) => (
+                <div key={g}>
+                  {g && <h4>{g}</h4>}
+                  {rows
+                    .filter((r) => r.doc.group === g)
+                    .map((r) => (
+                      <button
+                        key={r.doc.id}
+                        onClick={() => go(r.doc.id)}
+                        className={active === r.doc.id ? "active" : ""}
+                      >
+                        <ListIcon size={16} />
+                        <span>{r.doc.name}</span>
+                        {r.conflict ? (
+                          <AlertTriangle size={14} />
+                        ) : (
+                          <small>
+                            {r.doc.tasks.filter((t) => !t.done).length || ""}
+                          </small>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              ))}
+            <button className="new-list" onClick={() => dialog("new")}>
+              <Plus size={16} />
+              新建清单
+            </button>
+          </nav>
+        </div>
         <div className="account">
           <button onClick={() => dialog("cloud")}>
             <Cloud size={19} />

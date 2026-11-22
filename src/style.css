@@ -158,8 +158,8 @@ button svg {
   color: #6a796c;
   font-weight: 650;
 }
-.lists {
-  overflow: auto;
+.sidebar-scroll {
+  overflow-y: auto;
   min-height: 0;
 }
 .sidebar h4 {
