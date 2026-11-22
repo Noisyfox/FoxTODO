@@ -3,6 +3,8 @@ import { Star, Sun, Trash2, X, Plus, Paperclip, Download } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { dateKey, uid, type Task, type Attachment } from "./model";
+import { arrayMove } from "@dnd-kit/sortable";
+import { SortArea, SortRow } from "./SortArea";
 import { report } from "./session";
 export function Draft({
   value,
@@ -108,41 +110,59 @@ export function Detail({
         </button>
       </div>
       <h3>步骤</h3>
-      {t.steps.map((s) => (
-        <div className="step" key={s.id}>
-          <input
-            type="checkbox"
-            checked={s.done}
-            onChange={() =>
-              change((t) => {
-                const a = t.steps.find((x) => x.id === s.id);
-                if (a) a.done = !a.done;
-              })
-            }
-          />
-          <Draft
-            label="步骤名称"
-            value={s.title}
-            onChange={(v) =>
-              change((t) => {
-                const a = t.steps.find((x) => x.id === s.id);
-                if (a) a.title = v;
-              })
-            }
-          />
-          <button
-            title="删除步骤"
-            className="icon"
-            onClick={() =>
-              change((t) => {
-                t.steps = t.steps.filter((x) => x.id !== s.id);
-              })
-            }
+      <SortArea
+        ids={t.steps.map((s) => s.id)}
+        disabled={t.steps.length < 2}
+        onMove={(id, target) =>
+          change((task) => {
+            const from = task.steps.findIndex((step) => step.id === id);
+            const to = task.steps.findIndex((step) => step.id === target);
+            if (from >= 0 && to >= 0)
+              task.steps = arrayMove(task.steps, from, to);
+          })
+        }
+      >
+        {t.steps.map((s) => (
+          <SortRow
+            className="step"
+            key={s.id}
+            id={s.id}
+            label={s.title || "步骤"}
           >
-            <X size={13} />
-          </button>
-        </div>
-      ))}
+            <input
+              type="checkbox"
+              checked={s.done}
+              onChange={() =>
+                change((t) => {
+                  const a = t.steps.find((x) => x.id === s.id);
+                  if (a) a.done = !a.done;
+                })
+              }
+            />
+            <Draft
+              label="步骤名称"
+              value={s.title}
+              onChange={(v) =>
+                change((t) => {
+                  const a = t.steps.find((x) => x.id === s.id);
+                  if (a) a.title = v;
+                })
+              }
+            />
+            <button
+              title="删除步骤"
+              className="icon"
+              onClick={() =>
+                change((t) => {
+                  t.steps = t.steps.filter((x) => x.id !== s.id);
+                })
+              }
+            >
+              <X size={13} />
+            </button>
+          </SortRow>
+        ))}
+      </SortArea>
       <form
         className="inline"
         onSubmit={(e) => {

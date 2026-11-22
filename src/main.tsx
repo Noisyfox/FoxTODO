@@ -46,6 +46,14 @@ import {
   type Row,
 } from "./model";
 import { CloudPanel } from "./CloudPanel";
+import { SortArea, SortRow } from "./SortArea";
+import {
+  compareOrder,
+  listItem,
+  movedPosition,
+  taskItem,
+  type OrderedItem,
+} from "./listOrder";
 import { Detail } from "./Detail";
 import { reminders } from "./alarms";
 import "./style.css";
@@ -115,7 +123,9 @@ function App() {
     (id === "day" && t.myDay === today) ||
     (id === "important" && t.important) ||
     (id === "plan" && !!(t.due || t.reminder));
-  const flat = rows.flatMap((r) => r.doc.tasks.map((t) => ({ r, t })));
+  const flat = rows.flatMap((r) =>
+    r.doc.tasks.map((t, index) => ({ r, t, ...taskItem(r.doc, t, index) })),
+  );
   const visible = flat.filter(({ r, t }) =>
     needle
       ? [
@@ -130,6 +140,7 @@ function App() {
           .includes(needle)
       : r.doc.id === active || matches(active, t),
   );
+  if (sort === "list") visible.sort(compareOrder);
   if (sort === "title")
     visible.sort((a, b) => a.t.title.localeCompare(b.t.title, "zh"));
   if (sort === "due")
@@ -189,10 +200,30 @@ function App() {
     ? "搜索结果"
     : currentList?.doc.name || special?.name || "我的清单";
   const HeadIcon = needle ? Search : special?.icon || ListIcon;
-  function card({ r, t }: { r: Row; t: Task }) {
+  function taskRows(items: (OrderedItem & { r: Row; t: Task })[]) {
     return (
-      <div
-        key={r.doc.id + t.id}
+      <SortArea
+        ids={items.map((item) => item.id)}
+        disabled={sort !== "list" || items.length < 2}
+        onMove={(id, target) => {
+          const item = items.find((row) => row.id === id);
+          const position = movedPosition(items, id, target);
+          if (item && position)
+            editTask(item.r, item.t.id, (task) => {
+              task.position = position;
+            });
+        }}
+      >
+        {items.map(card)}
+      </SortArea>
+    );
+  }
+  function card({ r, t, id }: { r: Row; t: Task; id: string }) {
+    return (
+      <SortRow
+        id={id}
+        label={t.title || "未命名任务"}
+        key={id}
         className={
           "task " +
           (t.done ? "finished " : "") +
@@ -241,7 +272,7 @@ function App() {
         >
           <Star size={18} />
         </button>
-      </div>
+      </SortRow>
     );
   }
   const status = v.saveFailed
@@ -330,30 +361,53 @@ function App() {
           <nav>
             {Array.from(new Set(rows.map((r) => r.doc.group)))
               .sort()
-              .map((g) => (
-                <div key={g}>
-                  {g && <h4>{g}</h4>}
-                  {rows
-                    .filter((r) => r.doc.group === g)
-                    .map((r) => (
-                      <button
-                        key={r.doc.id}
-                        onClick={() => go(r.doc.id)}
-                        className={active === r.doc.id ? "active" : ""}
-                      >
-                        <ListIcon size={16} />
-                        <span>{r.doc.name}</span>
-                        {r.conflict ? (
-                          <AlertTriangle size={14} />
-                        ) : (
-                          <small>
-                            {r.doc.tasks.filter((t) => !t.done).length || ""}
-                          </small>
-                        )}
-                      </button>
-                    ))}
-                </div>
-              ))}
+              .map((g) => {
+                const members = rows
+                  .filter((r) => r.doc.group === g)
+                  .map((r) => ({ r, ...listItem(r.doc) }))
+                  .sort(compareOrder);
+                return (
+                  <div key={g}>
+                    {g && <h4>{g}</h4>}
+                    <SortArea
+                      ids={members.map((m) => m.id)}
+                      disabled={members.length < 2}
+                      onMove={(id, target) => {
+                        const position = movedPosition(members, id, target);
+                        if (position)
+                          change(id, (doc) => {
+                            doc.position = position;
+                          });
+                      }}
+                    >
+                      {members.map(({ r, id }) => (
+                        <SortRow
+                          key={id}
+                          id={id}
+                          label={r.doc.name}
+                          className="sidebar-list-row"
+                        >
+                          <button
+                            onClick={() => go(id)}
+                            className={active === id ? "active" : ""}
+                          >
+                            <ListIcon size={16} />
+                            <span>{r.doc.name}</span>
+                            {r.conflict ? (
+                              <AlertTriangle size={14} />
+                            ) : (
+                              <small>
+                                {r.doc.tasks.filter((t) => !t.done).length ||
+                                  ""}
+                              </small>
+                            )}
+                          </button>
+                        </SortRow>
+                      ))}
+                    </SortArea>
+                  </div>
+                );
+              })}
             <button className="new-list" onClick={() => dialog("new")}>
               <Plus size={16} />
               新建清单
@@ -474,7 +528,7 @@ function App() {
                   value={sort}
                   onChange={(e) => order(e.target.value)}
                 >
-                  <option value="list">默认排序</option>
+                  <option value="list">手动排序</option>
                   <option value="title">按名称</option>
                   <option value="due">按截止日期</option>
                   <option value="star">重要优先</option>
@@ -510,7 +564,7 @@ function App() {
               </div>
             )}
           </div>
-          <div className="task-list">{open.map(card)}</div>
+          <div className="task-list">{taskRows(open)}</div>
           {!open.length && (
             <div className="empty">
               <HeadIcon size={38} strokeWidth={1.2} />
@@ -539,7 +593,7 @@ function App() {
                 />
                 已完成 <span>{completed.length}</span>
               </button>
-              {done && completed.map(card)}
+              {done && taskRows(completed)}
             </>
           )}
         </div>

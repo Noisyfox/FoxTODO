@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { preserveOrder } from "./listOrder";
 import type { List, Row, View } from "./model";
 type LocalState = View & {
   error: string;
@@ -61,6 +62,7 @@ export function mutate(
         doc = structuredClone(r?.doc ?? seed);
       if (!doc) throw Error("此清单已不存在");
       fn(doc);
+      if (r) preserveOrder(r.doc, doc);
       const saved = await invoke<Row>("save_list", {
         doc,
         revision: r?.revision ?? 0,

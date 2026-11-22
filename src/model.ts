@@ -1,3 +1,4 @@
+import type { Position } from "./listOrder";
 import { v5 } from "uuid";
 export interface Attachment {
   name: string;
@@ -22,6 +23,7 @@ export interface Recurrence {
   };
 }
 export interface Task {
+  position?: Position;
   id: string;
   title: string;
   done: boolean;
@@ -38,6 +40,7 @@ export interface Task {
   imported: null | { recurrence?: Recurrence };
 }
 export interface List {
+  position?: Position;
   version: number;
   id: string;
   name: string;
@@ -208,6 +211,7 @@ export function complete(list: List, id: string) {
   if (successor) return;
   const t = structuredClone(task);
   t.id = occurrenceId(id, date);
+  delete t.position;
   t.due = date;
   t.repeatAnchor = dateKey(anchor);
   t.done = false;

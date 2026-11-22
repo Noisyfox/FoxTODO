@@ -46,7 +46,17 @@ pub struct Attachment {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct Position {
+    pub list_name: String,
+    pub list_id: Uuid,
+    pub index: usize,
+    pub rank: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Task {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Position>,
     pub id: Uuid,
     pub title: String,
     #[serde(default)]
@@ -77,6 +87,7 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Self {
+            position: None,
             id: Uuid::new_v4(),
             title: String::new(),
             done: false,
@@ -97,6 +108,8 @@ impl Default for Task {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Document {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Position>,
     pub version: u32,
     pub id: Uuid,
     pub name: String,
@@ -108,6 +121,7 @@ impl Document {
     pub fn new(id: Uuid, name: String) -> Self {
         Self {
             version: 1,
+            position: None,
             id,
             name,
             group: String::new(),

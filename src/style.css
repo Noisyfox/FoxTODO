@@ -749,3 +749,33 @@ h1 {
     padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
 }
+
+.sidebar-list-row {
+  display: flex;
+  align-items: center;
+}
+.sidebar-list-row > button:last-child {
+  min-width: 0;
+}
+.drag-handle,
+.sidebar nav .drag-handle {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  width: 24px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--cream);
+  box-shadow: 0 2px 8px #19362726;
+}
+.dragging .drag-handle {
+  cursor: grabbing;
+}
