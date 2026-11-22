@@ -148,11 +148,28 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
       ) : lists ? (
         <>
           <h3>选择要导入的 Microsoft To Do 清单</h3>
+          <label className="select-all-lists">
+            <input
+              type="checkbox"
+              disabled={busy || lists.length === 0}
+              checked={lists.length > 0 && selected.length === lists.length}
+              ref={(input) => {
+                if (input)
+                  input.indeterminate =
+                    selected.length > 0 && selected.length < lists.length;
+              }}
+              onChange={(e) =>
+                setSelected(e.target.checked ? lists.map((list) => list.id) : [])
+              }
+            />
+            全选
+          </label>
           <div className="choices">
             {lists.map((l) => (
               <label key={l.id}>
                 <input
                   type="checkbox"
+                  disabled={busy}
                   checked={selected.includes(l.id)}
                   onChange={(e) =>
                     setSelected(

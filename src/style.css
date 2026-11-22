@@ -571,6 +571,7 @@ h1 {
   max-height: 280px;
   overflow: auto;
 }
+.select-all-lists,
 .choices label,
 .folder,
 .dir-head {
