@@ -305,7 +305,7 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
-    builder
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -336,8 +336,35 @@ pub fn run() {
             import_selected,
             reminders::schedule_desktop
         ])
-        .run(context)
+        .build(context)
         .expect("FoxTODO runtime");
+    #[cfg(target_os = "macos")]
+    app.run(|app, event| match event {
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            ..
+        } if label == "main" => {
+            if let Some(window) = app.get_webview_window(&label) {
+                if window.hide().is_ok() {
+                    api.prevent_close();
+                }
+            }
+        }
+        tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } => {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(err) = window.show().and_then(|_| window.set_focus()) {
+                    eprintln!("Failed to reopen the main window: {err}");
+                }
+            }
+        }
+        _ => {}
+    });
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_, _| {});
 }
 #[cfg(test)]
 mod tests;
