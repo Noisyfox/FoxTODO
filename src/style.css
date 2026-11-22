@@ -143,14 +143,10 @@
   }
   .sortable-row,
   .sortable-row .task-text {
-    @apply cursor-grab select-none;
+    @apply cursor-default select-none;
   }
   .sortable-row :is(input, textarea) {
     @apply select-text;
-  }
-  .dragging,
-  .dragging .task-text {
-    @apply cursor-grabbing;
   }
   .dragging {
     @apply relative z-2 bg-card shadow-md;
