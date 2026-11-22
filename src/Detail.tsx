@@ -1,3 +1,11 @@
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { useEffect, useState } from "react";
 import { Star, Sun, Trash2, X, Plus, Paperclip, Download } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -10,11 +18,13 @@ export function Draft({
   value,
   onChange,
   multi = false,
+  className,
   label,
 }: {
   value: string;
   onChange: (s: string) => void;
   multi?: boolean;
+  className?: string;
   label: string;
 }) {
   const [text, set] = useState(value),
@@ -23,6 +33,7 @@ export function Draft({
     if (!focused) set(value);
   }, [value, focused]);
   const props = {
+    className,
     "aria-label": label,
     placeholder: label,
     value: text,
@@ -33,7 +44,7 @@ export function Draft({
       onChange(e.target.value);
     },
   };
-  return multi ? <textarea {...props} /> : <input {...props} />;
+  return multi ? <Textarea {...props} /> : <Input {...props} />;
 }
 export function Detail({
   t,
@@ -67,15 +78,22 @@ export function Detail({
         .slice(0, 16)
     : "";
   return (
-    <div className="detail-content">
-      <div className="detail-head">
+    <div className="detail-content h-full overflow-auto">
+      <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
         <span>{list}</span>
-        <button className="icon" onClick={close} title="关闭任务详情">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+
+          onClick={close}
+          title="关闭任务详情"
+        >
           <X size={18} />
-        </button>
+        </Button>
       </div>
       <h2>
         <Draft
+          className="border-0 px-0 text-xl font-semibold shadow-none md:text-xl"
           label="任务标题"
           value={t.title}
           onChange={(s) =>
@@ -85,9 +103,11 @@ export function Detail({
           }
         />
       </h2>
-      <div className="chips">
-        <button
-          className={t.important ? "selected" : ""}
+      <div className="my-4 flex flex-wrap gap-1.5 [&_[aria-pressed=true]]:bg-accent">
+        <Button
+          variant="outline"
+          size="sm"
+          aria-pressed={t.important}
           onClick={() =>
             change((t) => {
               t.important = !t.important;
@@ -96,9 +116,11 @@ export function Detail({
         >
           <Star size={15} />
           重要
-        </button>
-        <button
-          className={t.myDay === dateKey() ? "selected" : ""}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-pressed={t.myDay === dateKey()}
           onClick={() =>
             change((t) => {
               t.myDay = t.myDay === dateKey() ? "" : dateKey();
@@ -107,7 +129,7 @@ export function Detail({
         >
           <Sun size={15} />
           我的一天
-        </button>
+        </Button>
       </div>
       <h3>步骤</h3>
       <SortArea
@@ -124,15 +146,15 @@ export function Detail({
       >
         {t.steps.map((s) => (
           <SortRow
-            className="step"
+            className="step my-2 flex min-h-10 items-center gap-1.5 py-1"
             key={s.id}
             id={s.id}
             label={s.title || "步骤"}
           >
-            <input
-              type="checkbox"
+            <Checkbox
+              aria-label={s.done ? "标记步骤为未完成" : "完成步骤"}
               checked={s.done}
-              onChange={() =>
+              onCheckedChange={() =>
                 change((t) => {
                   const a = t.steps.find((x) => x.id === s.id);
                   if (a) a.done = !a.done;
@@ -140,6 +162,7 @@ export function Detail({
               }
             />
             <Draft
+              className="w-auto min-w-[6ch] max-w-[calc(100%-6rem)] border-0 px-1 shadow-none field-sizing-content"
               label="步骤名称"
               value={s.title}
               onChange={(v) =>
@@ -149,9 +172,11 @@ export function Detail({
                 })
               }
             />
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               title="删除步骤"
-              className="icon"
+              className="ml-auto"
               onClick={() =>
                 change((t) => {
                   t.steps = t.steps.filter((x) => x.id !== s.id);
@@ -159,12 +184,12 @@ export function Detail({
               }
             >
               <X size={13} />
-            </button>
+            </Button>
           </SortRow>
         ))}
       </SortArea>
       <form
-        className="inline"
+        className="my-2 flex items-center gap-1.5"
         onSubmit={(e) => {
           e.preventDefault();
           if (step.trim()) {
@@ -174,19 +199,24 @@ export function Detail({
           }
         }}
       >
-        <input
+        <Input
           aria-label="添加步骤"
           value={step}
           onChange={(e) => setStep(e.target.value)}
           placeholder="添加步骤"
         />
-        <button className="icon" title="添加步骤">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+
+          title="添加步骤"
+        >
           <Plus size={16} />
-        </button>
+        </Button>
       </form>
       <label className="field">
         截止日期
-        <input
+        <Input
           type="date"
           value={t.due}
           onChange={(e) => {
@@ -200,7 +230,7 @@ export function Detail({
       </label>
       <label className="field">
         提醒
-        <input
+        <Input
           type="datetime-local"
           value={localTime}
           onChange={(e) => {
@@ -213,7 +243,7 @@ export function Detail({
       </label>
       <label className="field">
         重复
-        <select
+        <NativeSelect
           value={t.repeat}
           onChange={(e) => {
             const s = e.target.value;
@@ -223,16 +253,18 @@ export function Detail({
             });
           }}
         >
-          <option value="">不重复</option>
-          <option value="daily">每天</option>
-          <option value="weekdays">工作日</option>
-          <option value="weekly">每周</option>
-          <option value="monthly">每月</option>
-          <option value="yearly">每年</option>
+          <NativeSelectOption value="">不重复</NativeSelectOption>
+          <NativeSelectOption value="daily">每天</NativeSelectOption>
+          <NativeSelectOption value="weekdays">工作日</NativeSelectOption>
+          <NativeSelectOption value="weekly">每周</NativeSelectOption>
+          <NativeSelectOption value="monthly">每月</NativeSelectOption>
+          <NativeSelectOption value="yearly">每年</NativeSelectOption>
           {t.repeat === "custom" && (
-            <option value="custom">导入的自定义规则</option>
+            <NativeSelectOption value="custom">
+              导入的自定义规则
+            </NativeSelectOption>
           )}
-        </select>
+        </NativeSelect>
       </label>
       <label className="field">
         分类
@@ -265,16 +297,17 @@ export function Detail({
       <div className="field">
         附件
         {files.map((f, i) => (
-          <button
-            className="folder"
+          <Button
+            variant="ghost"
+            className="w-full justify-start overflow-hidden"
             key={i}
             onClick={() => void download(f).catch(report)}
           >
             <Download size={14} />
             {f.name}
-          </button>
+          </Button>
         ))}
-        <label className="file-input">
+        <label className="flex w-fit cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm [&_input]:hidden">
           <Paperclip size={14} />
           添加附件
           <input
@@ -296,10 +329,14 @@ export function Detail({
           />
         </label>
       </div>
-      <button className="danger" onClick={remove}>
+      <Button
+        variant="ghost"
+        className="mt-3 text-destructive hover:text-destructive"
+        onClick={remove}
+      >
         <Trash2 size={15} />
         删除任务
-      </button>
+      </Button>
     </div>
   );
 }

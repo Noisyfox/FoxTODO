@@ -37,4 +37,6 @@ FoxTODO 是面向 Windows、macOS 和 Android 的 Tauri 2 任务应用。无需�
 | 在目标桌面系统上打包 | `pnpm tauri build` |
 | 构建 Android ARM64 调试 APK | `pnpm tauri android build --target aarch64 --debug --apk` |
 
-界面位于 src，Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模拟测试覆盖响应丢失、上传期间编辑、并发提交和删除冲突。真实账号的权限、上传会话提交行为和附件导入仍需使用个人 OneDrive 验收。
+前端使用 React、shadcn/ui 和 Tailwind CSS 4。共享控件位于 `src/components/ui`，主题在 `src/style.css` 中配置。
+
+Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模拟测试覆盖响应丢失、上传期间编辑、并发提交和删除冲突。真实账号的权限、上传会话提交行为和附件导入仍需使用个人 OneDrive 验收。

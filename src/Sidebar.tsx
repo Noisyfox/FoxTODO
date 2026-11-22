@@ -82,7 +82,11 @@ export function SidebarLayout({
   );
   return (
     <Layout.Provider value={{ drawer, left, right }}>
-      <div className={"app" + (withDetail ? " with-detail" : "")}>
+      <div
+        className={
+          "app flex h-dvh overflow-hidden" + (withDetail ? " with-detail" : "")
+        }
+      >
         {children}
       </div>
     </Layout.Provider>

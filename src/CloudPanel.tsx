@@ -1,3 +1,7 @@
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -88,7 +92,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
   return (
     <section className="modal-card">
       <Cloud className="modal-symbol" />
-      <h2>OneDrive</h2>
+      <DialogTitle>OneDrive</DialogTitle>
       {view.binding && (
         <p className="hint">当前数据目录 · {view.binding.label}</p>
       )}
@@ -98,9 +102,11 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
         <>
           <h3>选择数据目录</h3>
           <div className="dir-head">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={!parents.length || busy || folderName !== null}
-              className="icon"
+
               title="上一级"
               onClick={() =>
                 void act(async () => {
@@ -110,13 +116,14 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               }
             >
               <ArrowLeft size={17} />
-            </button>
+            </Button>
             {dir.name}
           </div>
           <div className="choices">
             {dir.children.map((f) => (
-              <button
-                className="folder"
+              <Button
+                variant="ghost"
+                className="folder w-full justify-start [&_svg:last-child]:ml-auto"
                 key={f.id}
                 disabled={busy || folderName !== null}
                 onClick={() =>
@@ -129,13 +136,14 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                 <Folder size={17} />
                 {f.name}
                 <ChevronRight size={16} />
-              </button>
+              </Button>
             ))}
           </div>
           {folderName === null ? (
             <>
-              <button
-                className="secondary"
+              <Button
+                variant="outline"
+                className="w-full"
                 disabled={busy}
                 onClick={() => {
                   setMsg("");
@@ -144,10 +152,10 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               >
                 <FolderPlus size={16} />
                 新建文件夹
-              </button>
-              <button
+              </Button>
+              <Button
                 disabled={busy}
-                className="primary"
+                className="w-full"
                 onClick={() =>
                   void act(async () => {
                     await invoke("bind", { folder: dir.id });
@@ -158,11 +166,11 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                 }
               >
                 使用此目录
-              </button>
+              </Button>
             </>
           ) : (
             <form
-              className="new-cloud-folder"
+              className="grid gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (busy || !folderName.trim()) return;
@@ -181,7 +189,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               }}
             >
               <label htmlFor="cloud-folder-name">新文件夹名称</label>
-              <input
+              <Input
                 id="cloud-folder-name"
                 autoFocus
                 autoComplete="off"
@@ -189,10 +197,10 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                 disabled={busy}
                 onChange={(event) => setFolderName(event.target.value)}
               />
-              <div>
-                <button
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
                   type="button"
-                  className="secondary"
                   disabled={busy}
                   onClick={() => {
                     setFolderName(null);
@@ -200,14 +208,13 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                   }}
                 >
                   取消
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className="primary"
                   disabled={busy || !folderName.trim()}
                 >
                   创建
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -216,18 +223,18 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
         <>
           <h3>选择要导入的 Microsoft To Do 清单</h3>
           <label className="select-all-lists">
-            <input
-              type="checkbox"
-              disabled={busy || lists.length === 0}
-              checked={lists.length > 0 && selected.length === lists.length}
-              ref={(input) => {
-                if (input)
-                  input.indeterminate =
-                    selected.length > 0 && selected.length < lists.length;
-              }}
-              onChange={(e) =>
+            <Checkbox
+              disabled={busy || !lists.length}
+              checked={
+                selected.length === 0
+                  ? false
+                  : selected.length === lists.length
+                    ? true
+                    : "indeterminate"
+              }
+              onCheckedChange={(checked) =>
                 setSelected(
-                  e.target.checked ? lists.map((list) => list.id) : [],
+                  checked === true ? lists.map((list) => list.id) : [],
                 )
               }
             />
@@ -236,13 +243,12 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
           <div className="choices">
             {lists.map((l) => (
               <label key={l.id}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   disabled={busy}
                   checked={selected.includes(l.id)}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     setSelected(
-                      e.target.checked
+                      checked === true
                         ? [...selected, l.id]
                         : selected.filter((i) => i !== l.id),
                     )
@@ -252,9 +258,9 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               </label>
             ))}
           </div>
-          <button
+          <Button
             disabled={busy || !selected.length}
-            className="primary"
+            className="w-full"
             onClick={() =>
               void act(async () => {
                 const r = await invoke<{
@@ -281,7 +287,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
             }
           >
             导入所选清单
-          </button>
+          </Button>
         </>
       ) : (
         <>
@@ -293,22 +299,23 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
               此版本尚未启用 OneDrive 登录，清单仍可保存在本机。
             </p>
           )}
-          <button
+          <Button
             disabled={busy || !view.oneDriveAvailable}
-            className="primary"
+            className="w-full"
             onClick={() => void act(() => signin(false))}
           >
             <LogIn size={16} />
             {view.binding ? "登录并选择目录" : "连接个人 OneDrive"}
-          </button>
+          </Button>
           {view.oneDriveAvailable && (
-            <button
+            <Button
+              variant="outline"
               disabled={busy}
-              className="secondary"
+              className="w-full"
               onClick={() => void act(() => signin(true))}
             >
               <Download size={16} />从 Microsoft To Do 导入
-            </button>
+            </Button>
           )}
         </>
       )}
@@ -318,9 +325,13 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
           {msg}
         </p>
       )}
-      <button className="text-button" onClick={close}>
+      <Button
+        variant="ghost"
+        className="w-full text-muted-foreground"
+        onClick={close}
+      >
         关闭
-      </button>
+      </Button>
     </section>
   );
 }

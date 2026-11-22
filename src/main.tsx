@@ -1,3 +1,18 @@
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -10,7 +25,6 @@ import {
   List as ListIcon,
   Search,
   Plus,
-  Check,
   Cloud,
   CloudOff,
   RefreshCw,
@@ -59,6 +73,8 @@ import { Sidebar, SidebarLayout } from "./Sidebar";
 import { Detail } from "./Detail";
 import { reminders } from "./alarms";
 import "./style.css";
+const navButton =
+  "h-10 w-full justify-start gap-3 text-left aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground";
 const views: { id: string; name: string; icon: LucideIcon }[] = [
   { id: "day", name: "我的一天", icon: Sun },
   { id: "important", name: "重要", icon: Star },
@@ -75,20 +91,28 @@ function App() {
     [entry, setEntry] = useState(""),
     [search, setSearch] = useState(""),
     [nav, setNav] = useState(false),
-    [menu, setMenu] = useState(false),
     [done, setDone] = useState(false),
     [sort, order] = useState("list"),
     [clock, setClock] = useState(() => new Date()),
     [conflict, setConflict] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
   const addRef = useRef<HTMLInputElement>(null),
-    findRef = useRef<HTMLInputElement>(null);
+    findRef = useRef<HTMLInputElement>(null),
+    menuTrigger = useRef<HTMLButtonElement>(null),
+    dialogOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 30000);
     const net = () => setOnline(navigator.onLine);
     window.addEventListener("offline", net);
     window.addEventListener("online", net);
     const keys = (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        document.querySelector(
+          '[data-slot="dialog-content"], [data-slot="dropdown-menu-content"]',
+        )
+      )
+        return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setNav(true);
@@ -96,7 +120,7 @@ function App() {
       }
       if (e.key === "Escape") {
         setNav(false);
-        setMenu(false);
+
         setModal("");
         setConflict("");
         pick(null);
@@ -164,7 +188,7 @@ function App() {
     setNav(false);
     setSearch("");
     pick(null);
-    setMenu(false);
+
     setDone(false);
   }
   function change(id: string, fn: (d: List) => void) {
@@ -177,9 +201,15 @@ function App() {
     });
   }
   function dialog(m: string) {
+    const focused = document.activeElement;
+    dialogOpener.current = focused?.closest('[role="menu"]')
+      ? menuTrigger.current
+      : focused instanceof HTMLElement
+        ? focused
+        : null;
     setModal(m);
     setNav(false);
-    setMenu(false);
+
     setInput(m === "rename" ? currentList?.doc.name || "" : "");
     setGroup(m === "rename" ? currentList?.doc.group || "" : "");
   }
@@ -238,13 +268,13 @@ function App() {
           (task?.id === t.id ? "chosen" : "")
         }
       >
-        <button
-          className="check"
+        <Checkbox
+          className="check size-[19px] rounded-full"
+          aria-label={t.done ? "标记为未完成" : "完成任务"}
           title={t.done ? "标记为未完成" : "完成任务"}
-          onClick={() => change(r.doc.id, (d) => complete(d, t.id))}
-        >
-          {t.done && <Check size={14} />}
-        </button>
+          checked={t.done}
+          onCheckedChange={() => change(r.doc.id, (d) => complete(d, t.id))}
+        />
         <div className="task-text">
           <strong>{t.title || "未命名任务"}</strong>
           <small>
@@ -266,9 +296,11 @@ function App() {
             ))}
           </small>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
           title={t.important ? "取消重要" : "标记重要"}
-          className={"icon star " + (t.important ? "set" : "")}
+          className={"star " + (t.important ? "set" : "")}
           onClick={() =>
             editTask(r, t.id, (x) => {
               x.important = !x.important;
@@ -276,7 +308,7 @@ function App() {
           }
         >
           <Star size={18} />
-        </button>
+        </Button>
       </SortRow>
     );
   }
@@ -300,18 +332,19 @@ function App() {
       {nav && (
         <button
           aria-label="关闭导航"
-          className="scrim"
+          className="fixed inset-0 z-4 hidden bg-black/30 drawer:block"
           onClick={() => setNav(false)}
         />
       )}
       <Sidebar open={nav}>
-        <div className="brand">
+        <div className="flex items-center gap-2.5 px-2.5 pb-7 text-2xl font-bold tracking-tight text-primary [&_img]:size-9">
           <img src="/fox.svg" alt="" />
           FoxTODO
         </div>
-        <div className="search">
+        <div className="search mb-5 flex items-center gap-2 rounded-md border bg-background px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/50">
           <Search size={16} />
-          <input
+          <Input
+            className="min-w-0 flex-1 border-0 px-0 shadow-none focus-visible:ring-0"
             ref={findRef}
             placeholder="搜索任务"
             aria-label="搜索任务"
@@ -325,23 +358,27 @@ function App() {
             }}
           />
           {search ? (
-            <button
-              className="icon"
+            <Button
+              variant="ghost"
+              size="icon-sm"
+
               title="清除搜索"
               onClick={() => setSearch("")}
             >
               <X size={13} />
-            </button>
+            </Button>
           ) : (
-            <kbd>{v.platform === "macos" ? "⌘ K" : "Ctrl K"}</kbd>
+            <Kbd>{v.platform === "macos" ? "⌘ K" : "Ctrl K"}</Kbd>
           )}
         </div>
-        <div className="sidebar-scroll">
+        <div className="sidebar-scroll min-h-0 overflow-y-auto">
           <nav>
             {views.map((x) => (
-              <button
+              <Button
+                variant="ghost"
                 key={x.id}
-                className={active === x.id && !needle ? "active" : ""}
+                className={navButton}
+                aria-current={active === x.id && !needle ? "page" : undefined}
                 onClick={() => go(x.id)}
               >
                 <x.icon size={18} />
@@ -350,11 +387,15 @@ function App() {
                   {flat.filter(({ t }) => !t.done && matches(x.id, t)).length ||
                     ""}
                 </small>
-              </button>
+              </Button>
             ))}
-            <button
+            <Button
+              variant="ghost"
               disabled={!v.ready}
-              className={active === v.defaultListId && !needle ? "active" : ""}
+              className={navButton}
+              aria-current={
+                active === v.defaultListId && !needle ? "page" : undefined
+              }
               onClick={() => go(v.defaultListId)}
             >
               <House size={18} />
@@ -362,17 +403,19 @@ function App() {
               <small>
                 {defaultList?.doc.tasks.filter((t) => !t.done).length || ""}
               </small>
-            </button>
+            </Button>
           </nav>
-          <div className="lists-header">
+          <div className="mt-6 mb-1 flex items-center justify-between border-t px-2 pt-3 text-xs font-semibold text-muted-foreground">
             <h3>我的清单</h3>
-            <button
-              className="icon"
+            <Button
+              variant="ghost"
+              size="icon-sm"
+
               title="新建清单"
               onClick={() => dialog("new")}
             >
               <Plus size={17} />
-            </button>
+            </Button>
           </div>
           <nav>
             {Array.from(new Set(customLists.map((r) => r.doc.group)))
@@ -423,165 +466,199 @@ function App() {
                   </div>
                 );
               })}
-            <button className="new-list" onClick={() => dialog("new")}>
+            <Button
+              variant="ghost"
+              className={navButton}
+              onClick={() => dialog("new")}
+            >
               <Plus size={16} />
               新建清单
-            </button>
+            </Button>
           </nav>
         </div>
         {v.ready && !v.binding && (
-          <div className="account">
-            <button onClick={() => dialog("cloud")}>
+          <div className="account mt-auto border-t pt-2 [&_strong]:block [&_small]:block [&_small]:text-xs [&_small]:text-muted-foreground">
+            <Button
+              variant="ghost"
+              className="h-auto w-full justify-start text-left [&>svg:last-child]:ml-auto"
+              onClick={() => dialog("cloud")}
+            >
               <Cloud size={19} />
               <span>
                 <strong>OneDrive</strong>
                 <small>连接个人账号</small>
               </span>
               <ArrowUpRight size={14} />
-            </button>
+            </Button>
           </div>
         )}
       </Sidebar>
-      <main>
-        <header>
-          <div className="breadcrumb">
-            <button
-              className="mobile icon"
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="workspace-header flex h-[65px] shrink-0 items-center justify-between gap-2.5 border-b px-[clamp(18px,3.7vw,54px)] drawer:h-[54px] drawer:px-3">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="hidden drawer:inline-flex"
               title="打开导航"
               onClick={() => setNav(true)}
             >
               <Menu size={20} />
-            </button>
+            </Button>
             工作区 <span>/</span> {title}
           </div>
-          <button
-            className="status"
+          <Button
+            variant="ghost"
+            className="status text-xs text-muted-foreground"
             onClick={() => (v.binding ? void sync() : dialog("cloud"))}
           >
             {v.busy ? (
-              <RefreshCw size={14} className="spin" />
+              <RefreshCw size={14} className="animate-spin" />
             ) : online ? (
               <CheckCheck size={15} />
             ) : (
               <CloudOff size={15} />
             )}{" "}
             {status}
-          </button>
+          </Button>
         </header>
-        <div className="content">
-          <div className="hero">
-            <div className="hero-symbol">
+        <div className="content flex-1 overflow-auto">
+          <div className="mb-7 flex items-center gap-4">
+            <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-orange-100 text-amber-700">
               <HeadIcon size={28} strokeWidth={1.6} />
             </div>
             <div>
-              <p className="date">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
                 {clock.toLocaleDateString("zh-CN", {
                   month: "long",
                   day: "numeric",
                   weekday: "long",
                 })}
               </p>
-              <h1>{title}</h1>
+              <h1 className="text-[clamp(28px,3vw,38px)] leading-tight font-bold tracking-tight text-primary">
+                {title}
+              </h1>
             </div>
           </div>
           {v.error && (
-            <div role="alert" className="banner">
+            <div
+              role="alert"
+              className="my-2 flex items-center justify-between gap-2 whitespace-pre-line rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
               {v.error}
-              <button
-                className="icon"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+
                 title="关闭提示"
                 onClick={() => report("")}
               >
                 <X size={14} />
-              </button>
+              </Button>
             </div>
           )}
           {conflicts.map((r) => (
-            <button
+            <Button
+              variant="ghost"
               key={r.doc.id}
-              className="banner conflict"
-              onClick={() => setConflict(r.doc.id)}
+              className="my-2 h-auto w-full justify-start whitespace-normal border border-amber-200 bg-amber-50 text-amber-900 [&_b]:ml-auto"
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setConflict(r.doc.id);
+              }}
             >
               <AlertTriangle size={16} />「{r.doc.name}」存在同步冲突{" "}
               <b>查看</b>
-            </button>
+            </Button>
           ))}
           {!needle && (
             <form
-              className="composer"
+              className="composer flex min-h-[53px] items-center gap-2 rounded-lg border border-input bg-card px-3 shadow-xs focus-within:ring-2 focus-within:ring-ring/50"
               onSubmit={(e) => {
                 e.preventDefault();
                 add();
               }}
             >
               <Plus size={21} />
-              <input
+              <Input
+                className="min-w-0 flex-1 border-0 px-0 shadow-none focus-visible:ring-0"
                 ref={addRef}
                 value={entry}
                 onChange={(e) => setEntry(e.target.value)}
                 placeholder="添加任务…"
                 aria-label="添加任务"
               />
-              <button
+              <Button
+                size="sm"
                 disabled={!entry.trim() || v.saving > 0 || !v.ready}
                 title="添加任务"
                 type="submit"
               >
                 添加
-              </button>
+              </Button>
             </form>
           )}
-          <div className="list-head">
+          <div className="list-head mt-7 mb-3 flex items-center justify-between [&>div]:flex [&>div]:items-center [&_h3]:font-semibold [&_h3_span]:text-xs [&_h3_span]:text-muted-foreground">
             <h3>
               待办 <span>{open.length}</span>
             </h3>
             <div>
-              <label className="sort">
+              <label className="flex items-center gap-1 text-muted-foreground">
                 <ArrowUpDown size={14} />
-                <select
+                <NativeSelect
+                  size="sm"
+                  className="border-0 shadow-none"
                   aria-label="排序"
                   value={sort}
                   onChange={(e) => order(e.target.value)}
                 >
-                  <option value="list">手动排序</option>
-                  <option value="title">按名称</option>
-                  <option value="due">按截止日期</option>
-                  <option value="star">重要优先</option>
-                </select>
+                  <NativeSelectOption value="list">手动排序</NativeSelectOption>
+                  <NativeSelectOption value="title">按名称</NativeSelectOption>
+                  <NativeSelectOption value="due">
+                    按截止日期
+                  </NativeSelectOption>
+                  <NativeSelectOption value="star">重要优先</NativeSelectOption>
+                </NativeSelect>
               </label>
-              <button
-                title="更多选项"
-                aria-expanded={menu}
-                className="icon"
-                onClick={() => setMenu(!menu)}
-              >
-                <Ellipsis size={18} />
-              </button>
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    ref={menuTrigger}
+                    title="更多选项"
+                    aria-label="更多选项"
+                  >
+                    <Ellipsis size={18} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {currentList && active !== v.defaultListId && (
+                    <>
+                      <DropdownMenuItem onSelect={() => dialog("rename")}>
+                        <Pencil />
+                        编辑清单
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => dialog("delete-list")}
+                        variant="destructive"
+                      >
+                        <Trash2 />
+                        删除清单
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuItem onSelect={() => dialog("cloud")}>
+                    <Cloud />
+                    OneDrive
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            {menu && (
-              <div className="popover">
-                {currentList && active !== v.defaultListId && (
-                  <>
-                    <button onClick={() => dialog("rename")}>
-                      <Pencil size={15} />
-                      编辑清单
-                    </button>
-                    <button onClick={() => dialog("delete-list")}>
-                      <Trash2 size={15} />
-                      删除清单
-                    </button>
-                  </>
-                )}
-                <button onClick={() => dialog("cloud")}>
-                  <Cloud size={15} />
-                  OneDrive
-                </button>
-              </div>
-            )}
           </div>
           <div className="task-list">{taskRows(open)}</div>
           {!open.length && (
-            <div className="empty">
+            <div className="grid min-h-40 content-center justify-items-center gap-2 rounded-lg border border-dashed text-center text-muted-foreground [&_h2]:font-semibold [&_p]:text-xs">
               <HeadIcon size={38} strokeWidth={1.2} />
               <h2>
                 {needle
@@ -601,13 +678,17 @@ function App() {
           )}
           {!!completed.length && (
             <>
-              <button className="fold" onClick={() => setDone(!done)}>
+              <Button
+                variant="ghost"
+                className="fold my-3 text-muted-foreground"
+                onClick={() => setDone(!done)}
+              >
                 <ChevronDown
                   size={15}
                   style={{ transform: done ? "" : "rotate(-90deg)" }}
                 />
                 已完成 <span>{completed.length}</span>
-              </button>
+              </Button>
               {done && taskRows(completed)}
             </>
           )}
@@ -626,18 +707,33 @@ function App() {
         </Sidebar>
       )}
       {(modal || c?.conflict) && (
-        <div className="backdrop" role="presentation">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={c ? "同步冲突" : "设置"}
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setModal("");
+              setConflict("");
+            }
+          }}
+        >
+          <DialogContent
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const opener = dialogOpener.current;
+              if (opener?.isConnected && !opener.closest("[inert]"))
+                opener.focus();
+            }}
+            showCloseButton={false}
+            aria-describedby={undefined}
+            className="max-h-[94dvh] overflow-y-auto sm:max-w-md"
+            onPointerDownOutside={(event) => event.preventDefault()}
           >
             {c?.conflict ? (
               <section className="modal-card">
                 <AlertTriangle className="modal-symbol" />
-                <h2>清单修改冲突</h2>
+                <DialogTitle>清单修改冲突</DialogTitle>
                 <p>「{c.doc.name}」在两端都发生了变化。</p>
-                <div className="versions">
+                <div className="grid gap-1 [&_p]:flex [&_p]:justify-between">
                   <p>
                     这台设备{" "}
                     <b>
@@ -693,9 +789,10 @@ function App() {
                       ["local", "使用本机版本"],
                     ]
                 ).map(([choice, text], i) => (
-                  <button
+                  <Button
+                    variant={i ? "outline" : "default"}
                     key={choice}
-                    className={i ? "secondary" : "primary"}
+                    className="w-full"
                     onClick={() =>
                       void invoke("resolve", {
                         id: c.doc.id,
@@ -711,11 +808,15 @@ function App() {
                     }
                   >
                     {text}
-                  </button>
+                  </Button>
                 ))}
-                <button className="text-button" onClick={() => setConflict("")}>
+                <Button
+                  variant="ghost"
+                  className="w-full text-muted-foreground"
+                  onClick={() => setConflict("")}
+                >
                   稍后处理
-                </button>
+                </Button>
               </section>
             ) : modal === "cloud" ? (
               <CloudPanel view={v} close={() => setModal("")} />
@@ -753,7 +854,7 @@ function App() {
                 }}
               >
                 <PanelRight className="modal-symbol" />
-                <h2>
+                <DialogTitle>
                   {
                     {
                       new: "新建清单",
@@ -762,12 +863,12 @@ function App() {
                       "delete-task": "删除任务？",
                     }[modal]
                   }
-                </h2>
+                </DialogTitle>
                 {["new", "rename"].includes(modal) ? (
                   <>
                     <label className="field">
                       清单名称
-                      <input
+                      <Input
                         autoFocus
                         required
                         value={input}
@@ -777,7 +878,7 @@ function App() {
                     </label>
                     <label className="field">
                       分组
-                      <input
+                      <Input
                         value={group}
                         onChange={(e) => setGroup(e.target.value)}
                         placeholder="可选"
@@ -791,20 +892,28 @@ function App() {
                       : detail?.title}
                   </p>
                 )}
-                <button className="primary" disabled={v.saving > 0}>
+                <Button
+                  type="submit"
+                  variant={
+                    modal.startsWith("delete") ? "destructive" : "default"
+                  }
+                  className="w-full"
+                  disabled={v.saving > 0}
+                >
                   {modal.startsWith("delete") ? "确认删除" : "保存清单"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
                   type="button"
-                  className="text-button"
+                  className="w-full text-muted-foreground"
                   onClick={() => setModal("")}
                 >
                   取消
-                </button>
+                </Button>
               </form>
             )}
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </SidebarLayout>
   );
