@@ -1,11 +1,9 @@
+import { TaskDatePicker } from "@/components/task-date-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { OptionCombobox } from "@/components/option-combobox";
 import { useEffect, useState } from "react";
 import { Star, Sun, Trash2, X, Plus, Paperclip, Download } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -46,6 +44,19 @@ export function Draft({
   };
   return multi ? <Textarea {...props} /> : <Input {...props} />;
 }
+const repeatOptions = [
+  { value: "", label: "不重复" },
+  { value: "daily", label: "每天" },
+  { value: "weekdays", label: "工作日" },
+  { value: "weekly", label: "每周" },
+  { value: "monthly", label: "每月" },
+  { value: "yearly", label: "每年" },
+];
+const importedRepeatOptions = [
+  ...repeatOptions,
+  { value: "custom", label: "导入的自定义规则" },
+];
+
 export function Detail({
   t,
   list,
@@ -69,14 +80,6 @@ export function Detail({
         Uint8Array.from(atob(a.contentBytes), (c) => c.charCodeAt(0)),
       );
   }
-  const localTime = t.reminder
-    ? new Date(
-        Date.parse(t.reminder) -
-          new Date(t.reminder).getTimezoneOffset() * 60000,
-      )
-        .toISOString()
-        .slice(0, 16)
-    : "";
   return (
     <div className="detail-content h-full overflow-auto">
       <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -214,58 +217,42 @@ export function Detail({
           <Plus size={16} />
         </Button>
       </form>
-      <label className="field">
-        截止日期
-        <Input
-          type="date"
-          value={t.due}
-          onChange={(e) => {
-            const s = e.target.value;
-            change((t) => {
-              t.due = s;
-              t.repeatAnchor = "";
-            });
-          }}
-        />
-      </label>
-      <label className="field">
-        提醒
-        <Input
-          type="datetime-local"
-          value={localTime}
-          onChange={(e) => {
-            const s = e.target.value;
-            change((t) => {
-              t.reminder = s ? new Date(s).toISOString() : "";
-            });
-          }}
-        />
-      </label>
-      <label className="field">
-        重复
-        <NativeSelect
+      <TaskDatePicker
+        kind="due"
+        value={t.due}
+        onChange={(due) =>
+          change((task) => {
+            task.due = due;
+            task.repeatAnchor = "";
+          })
+        }
+      />
+      <TaskDatePicker
+        kind="reminder"
+        value={t.reminder}
+        onChange={(reminder) =>
+          change((task) => {
+            task.reminder = reminder;
+          })
+        }
+      />
+      <div className="field">
+        <label htmlFor="task-repeat">重复</label>
+        <OptionCombobox
+          id="task-repeat"
+          label="重复"
+          options={
+            t.repeat === "custom" ? importedRepeatOptions : repeatOptions
+          }
           value={t.repeat}
-          onChange={(e) => {
-            const s = e.target.value;
-            change((t) => {
-              t.repeat = s;
-              t.repeatAnchor = "";
-            });
-          }}
-        >
-          <NativeSelectOption value="">不重复</NativeSelectOption>
-          <NativeSelectOption value="daily">每天</NativeSelectOption>
-          <NativeSelectOption value="weekdays">工作日</NativeSelectOption>
-          <NativeSelectOption value="weekly">每周</NativeSelectOption>
-          <NativeSelectOption value="monthly">每月</NativeSelectOption>
-          <NativeSelectOption value="yearly">每年</NativeSelectOption>
-          {t.repeat === "custom" && (
-            <NativeSelectOption value="custom">
-              导入的自定义规则
-            </NativeSelectOption>
-          )}
-        </NativeSelect>
-      </label>
+          onValueChange={(repeat) =>
+            change((task) => {
+              task.repeat = repeat;
+              task.repeatAnchor = "";
+            })
+          }
+        />
+      </div>
       <label className="field">
         分类
         <Draft

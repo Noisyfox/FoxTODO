@@ -9,10 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { OptionCombobox } from "@/components/option-combobox";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -75,6 +72,12 @@ import { reminders } from "./alarms";
 import "./style.css";
 const navButton =
   "h-10 w-full justify-start gap-3 text-left aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground";
+const sortOptions = [
+  { value: "list", label: "手动排序" },
+  { value: "title", label: "按名称" },
+  { value: "due", label: "按截止日期" },
+  { value: "star", label: "重要优先" },
+];
 const views: { id: string; name: string; icon: LucideIcon }[] = [
   { id: "day", name: "我的一天", icon: Sun },
   { id: "important", name: "重要", icon: Star },
@@ -109,7 +112,7 @@ function App() {
       if (
         e.defaultPrevented ||
         document.querySelector(
-          '[data-slot="dialog-content"], [data-slot="dropdown-menu-content"]',
+          '[data-slot="dialog-content"], [data-slot="dropdown-menu-content"], [data-slot="combobox-content"], [data-slot="popover-content"][data-state="open"]',
         )
       )
         return;
@@ -603,23 +606,16 @@ function App() {
               待办 <span>{open.length}</span>
             </h3>
             <div>
-              <label className="flex items-center gap-1 text-muted-foreground">
+              <div className="flex items-center gap-1 text-muted-foreground">
                 <ArrowUpDown size={14} />
-                <NativeSelect
-                  size="sm"
-                  className="border-0 shadow-none"
-                  aria-label="排序"
+                <OptionCombobox
+                  compact
+                  label="排序"
+                  options={sortOptions}
                   value={sort}
-                  onChange={(e) => order(e.target.value)}
-                >
-                  <NativeSelectOption value="list">手动排序</NativeSelectOption>
-                  <NativeSelectOption value="title">按名称</NativeSelectOption>
-                  <NativeSelectOption value="due">
-                    按截止日期
-                  </NativeSelectOption>
-                  <NativeSelectOption value="star">重要优先</NativeSelectOption>
-                </NativeSelect>
-              </label>
+                  onValueChange={order}
+                />
+              </div>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button

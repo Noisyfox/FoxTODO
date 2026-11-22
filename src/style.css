@@ -162,9 +162,6 @@
   .field :is(input, select, textarea) {
     @apply text-foreground;
   }
-  .field [data-slot="native-select-wrapper"] {
-    width: 100%;
-  }
   .modal-card {
     @apply grid min-w-0 gap-3;
   }
