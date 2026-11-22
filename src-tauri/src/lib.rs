@@ -265,6 +265,15 @@ async fn import_selected(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = {
+        use tauri_plugin_window_state::{Builder, StateFlags};
+        let flags = StateFlags::POSITION
+            | StateFlags::SIZE
+            | StateFlags::MAXIMIZED
+            | StateFlags::FULLSCREEN;
+        builder.plugin(Builder::default().with_state_flags(flags).build())
+    };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
     builder

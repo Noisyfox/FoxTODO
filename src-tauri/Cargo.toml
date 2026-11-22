@@ -37,6 +37,9 @@ html2text = "0.17"
 unicode-segmentation = "1.13.3"
 emojis = "0.9.1"
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-window-state = "2"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation_Collections"] }
 

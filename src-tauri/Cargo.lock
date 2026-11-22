@@ -1261,6 +1261,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-secure-keystore",
+ "tauri-plugin-window-state",
  "tempfile",
  "tokio",
  "unicode-segmentation",
@@ -4544,6 +4545,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "446a5f36c8333932f6f30eb7787f1d6c9affe35527219d22509051204a7a2dd0"
 dependencies = [
  "keyring",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tauri-plugin-window-state"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d6815cab7b212f9cfe16a9d79d8d22f9e14159e4a9460f7dec1467167a008e3"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
  "serde",
  "serde_json",
  "tauri",
