@@ -264,7 +264,36 @@ async fn import_selected(
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
     let builder = tauri::Builder::default();
+    #[cfg(windows)]
+    let (builder, context) = {
+        use tauri::webview::{Color, PageLoadEvent};
+
+        // Let window-state restore the main window while WebView2 loads offscreen.
+        let mut context = context;
+        let main = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|w| w.label == "main")
+            .expect("main window configuration");
+        main.visible = false;
+        main.background_color = Some(Color(250, 249, 246, 255));
+
+        let first_load = std::sync::Once::new();
+        let builder = builder.on_page_load(move |webview, load| {
+            if webview.label() == "main" && load.event() == PageLoadEvent::Finished {
+                first_load.call_once(|| {
+                    if let Err(err) = webview.window().show() {
+                        eprintln!("Failed to show the main window: {err}");
+                    }
+                });
+            }
+        });
+        (builder, context)
+    };
     #[cfg(desktop)]
     let builder = {
         use tauri_plugin_window_state::{Builder, StateFlags};
@@ -307,7 +336,7 @@ pub fn run() {
             import_selected,
             reminders::schedule_desktop
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("FoxTODO runtime");
 }
 #[cfg(test)]
