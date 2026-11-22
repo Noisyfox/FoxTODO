@@ -43,7 +43,7 @@ Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模�
 
 ## GitHub Actions 构建
 
-可在 [FoxTODO Nightly](https://github.com/Noisyfox/FoxTODO/releases/tag/nightly-builds) 下载 Windows x64 安装程序、macOS Apple Silicon DMG 和正式签名的 Android ARM64 APK。每天北京时间 10:15 定时构建，也可通过推送到 `main` 或在 `main` 手动运行 **Build FoxTODO** 触发。三个平台都成功后，工作流更新同一个预发布版，下载地址保持固定。发布说明链接到对应的源码提交和构建记录。
+可在 [FoxTODO Nightly](https://github.com/Noisyfox/FoxTODO/releases/tag/nightly-builds) 下载 Windows x64 安装程序、macOS Apple Silicon DMG 和正式签名的 Android ARM64 APK。推送到 `main` 或在 `main` 手动运行 **Build FoxTODO** 会触发 Nightly 构建。三个平台都成功后，工作流更新同一个预发布版，下载地址保持固定。发布说明链接到对应的源码提交和构建记录。
 
 推送任意分支、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
 
