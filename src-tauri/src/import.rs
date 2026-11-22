@@ -6,9 +6,61 @@ use crate::{
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Mutex};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 fn string(v: &Value, k: &str) -> String {
     v[k].as_str().unwrap_or("").into()
+}
+fn list_label(display_name: &str) -> (Option<&str>, &str) {
+    let trimmed = display_name.trim_start();
+    if let Some(first) = trimmed.graphemes(true).next() {
+        let rest = trimmed[first.len()..].trim_start();
+        if !rest.is_empty() && emojis::get(first).is_some() {
+            return (Some(first), rest);
+        }
+    }
+    (None, display_name)
+}
+
+pub fn list_preview(list: &Value) -> Value {
+    let (emoji, name) = list_label(list["displayName"].as_str().unwrap_or_default());
+    serde_json::json!({ "id": list["id"], "displayName": name, "emoji": emoji })
+}
+
+// Keep implicit drag-sort anchors based on the old name, just as a rename in the UI does.
+fn repair_label(doc: &mut Document) -> bool {
+    let (Some(emoji), name) = list_label(&doc.name) else {
+        return false;
+    };
+    doc.emoji = Some(emoji.into());
+    let name = name.to_owned();
+    let old_name = std::mem::replace(&mut doc.name, name);
+    let anchor = |index| Position {
+        list_name: old_name.clone(),
+        list_id: doc.id,
+        index,
+        rank: "a0".into(),
+    };
+    doc.position.get_or_insert_with(|| anchor(0));
+    for (index, task) in doc.tasks.iter_mut().enumerate() {
+        task.position.get_or_insert_with(|| anchor(index));
+    }
+    true
+}
+
+// A legacy import has no list-level source field. Verify a task's deterministic
+// import ID before interpreting the prefix offline, so local lists retain their names.
+pub fn show_legacy_icon(doc: &mut Document) {
+    if doc.emoji.is_some() || doc.id.get_version_num() != 5 {
+        return;
+    }
+    if doc.tasks.iter().any(|task| {
+        task.imported
+            .as_ref()
+            .is_some_and(|raw| imported_id(doc.id, raw) == Ok(task.id))
+    }) {
+        repair_label(doc);
+    }
 }
 fn imported_id(scope: Uuid, v: &Value) -> Result<Uuid> {
     let id = v["id"].as_str().ok_or("微软任务缺少 ID")?;
@@ -81,7 +133,17 @@ pub async fn selected(
     let default = list["wellknownListName"] == "defaultList";
     {
         let s = guard(store)?;
-        if let Some(old) = s.get(source_id)? {
+        if let Some(mut old) = s.get(source_id)? {
+            if !default
+                && !old.deleted
+                && old.conflict.is_none()
+                && old.doc.emoji.is_none()
+                && list["displayName"].as_str() == Some(&old.doc.name)
+                && repair_label(&mut old.doc)
+            {
+                s.edit(old.doc, old.revision, false)?;
+                return Ok(true);
+            }
             if !default || old.deleted {
                 return Ok(false);
             }
@@ -114,7 +176,10 @@ pub async fn selected(
 async fn fetch(graph: &Graph, drive: &str, list: &Value) -> Result<Document> {
     let key = list["id"].as_str().ok_or("清单缺少 ID")?;
     let id = list_id(drive, key);
-    let mut doc = Document::new(id, string(list, "displayName"));
+    let (emoji, name) = list_label(list["displayName"].as_str().unwrap_or_default());
+    let mut doc = Document::new(id, name.into());
+    // An explicit empty icon also distinguishes new imports from legacy documents.
+    doc.emoji = Some(emoji.unwrap_or_default().into());
     let path = format!("/me/todo/lists/{}/tasks", segment(key));
     for v in graph.pages(&path).await? {
         let task_id = imported_id(id, &v)?;
@@ -193,6 +258,67 @@ async fn fetch(graph: &Graph, drive: &str, list: &Value) -> Result<Document> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn separates_only_a_complete_leading_emoji_when_the_name_has_text() {
+        for icon in ["📚", "👩🏽‍💻", "🇨🇳", "1️⃣", "☕️", "❤️"] {
+            for separator in ["", " ", "　"] {
+                let raw = format!("{icon}{separator}读书📖");
+                assert_eq!(list_label(&raw), (Some(icon), "读书📖"));
+            }
+        }
+        for name in ["读书📖", "👩🏽‍💻", "2026 计划", "# 计划", "普通清单"] {
+            assert_eq!(list_label(name), (None, name));
+        }
+    }
+
+    #[test]
+    fn offline_legacy_display_preserves_order_and_requires_import_provenance() {
+        let id = list_id("drive", "books");
+        let mut doc = Document::new(id, "📚 阅读".into());
+        let raw = json!({"id":"first"});
+        doc.tasks.push(Task {
+            id: imported_id(id, &raw).unwrap(),
+            imported: Some(raw),
+            ..Default::default()
+        });
+        let mut fork = doc.clone();
+        fork.id = list_id("another", "books");
+        show_legacy_icon(&mut fork);
+        assert_eq!(fork.name, "📚 阅读");
+        show_legacy_icon(&mut doc);
+        assert_eq!(doc.name, "阅读");
+        assert_eq!(doc.emoji.as_deref(), Some("📚"));
+        assert_eq!(doc.tasks[0].position.as_ref().unwrap().list_name, "📚 阅读");
+        assert_eq!(
+            serde_json::from_slice::<Document>(&doc.bytes().unwrap()).unwrap(),
+            doc
+        );
+    }
+
+    #[tokio::test]
+    async fn reimport_repairs_empty_legacy_list_once_and_preserves_renames() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Mutex::new(Store::open(tmp.path().into()).unwrap());
+        let graph = Graph {
+            http: reqwest::Client::new(),
+            token: String::new(),
+        };
+        let list = json!({"id":"L","displayName":"📚 阅读"});
+        let id = list_id("drive", "L");
+        let mut doc = Document::new(id, "本机名称".into());
+        store.lock().unwrap().edit(doc.clone(), 0, false).unwrap();
+        assert!(!selected(&graph, &store, "drive", &list, "L").await.unwrap());
+        doc.name = "📚 阅读".into();
+        let revision = store.lock().unwrap().get(id).unwrap().unwrap().revision;
+        store.lock().unwrap().edit(doc, revision, false).unwrap();
+        assert!(selected(&graph, &store, "drive", &list, "L").await.unwrap());
+        assert!(!selected(&graph, &store, "drive", &list, "L").await.unwrap());
+        let record = store.lock().unwrap().get(id).unwrap().unwrap();
+        assert_eq!(record.doc.name, "阅读");
+        assert_eq!(record.doc.emoji.as_deref(), Some("📚"));
+        assert!(record.dirty);
+    }
 
     #[tokio::test]
     async fn promotes_only_the_builtin_import_and_keeps_local_edits() {

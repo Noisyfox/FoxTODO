@@ -34,6 +34,8 @@ windows-timezones = "0.5"
 async-trait = "0.1"
 percent-encoding = "2"
 html2text = "0.17"
+unicode-segmentation = "1.13.3"
+emojis = "0.9.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation_Collections"] }

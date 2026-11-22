@@ -54,8 +54,12 @@ fn login_client(binding: Option<&Binding>) -> Option<&str> {
 #[tauri::command]
 fn snapshot(app: State<App>) -> Result<Value> {
     let s = guard(&app.store)?;
+    let mut records = s.records()?;
+    for r in &mut records {
+        import::show_legacy_icon(&mut r.doc);
+    }
     Ok(
-        json!({"defaultListId":DEFAULT_LIST_ID,"records":s.records()?,"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
+        json!({"defaultListId":DEFAULT_LIST_ID,"records":records,"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
     )
 }
 #[tauri::command]
@@ -223,7 +227,11 @@ async fn import_lists(
     workspace: Option<Binding>,
 ) -> Result<Value> {
     let g = import_graph(&app, &handle, &drive, workspace.as_ref()).await?;
-    Ok(json!(g.pages("/me/todo/lists").await?))
+    let lists = g.pages("/me/todo/lists").await?;
+    Ok(json!(lists
+        .iter()
+        .map(import::list_preview)
+        .collect::<Vec<_>>()))
 }
 #[tauri::command]
 async fn import_selected(

@@ -20,6 +20,7 @@ interface Dir {
   name: string;
   children: { id: string; name: string }[];
 }
+type ImportList = { id: string; displayName: string; emoji: string | null };
 export function CloudPanel({ view, close }: { view: View; close: () => void }) {
   const [signingIn, setSigningIn] = useState(false),
     [importDrive, setImportDrive] = useState(""),
@@ -28,9 +29,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
     [parents, setParents] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [msg, setMsg] = useState(""),
-    [lists, setLists] = useState<{ id: string; displayName: string }[] | null>(
-      null,
-    ),
+    [lists, setLists] = useState<ImportList[] | null>(null),
     [selected, setSelected] = useState<string[]>([]);
   const live = useRef(true);
   const attempt = useRef<string | null>(null);
@@ -70,7 +69,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
       if (!live.current) return;
       setSigningIn(false);
       if (tasks) {
-        const imported = await invoke<{ id: string; displayName: string }[]>(
+        const imported = await invoke<ImportList[]>(
           "import_lists",
           {
             drive,
@@ -254,6 +253,7 @@ export function CloudPanel({ view, close }: { view: View; close: () => void }) {
                     )
                   }
                 />
+                {l.emoji && <span aria-hidden="true">{l.emoji}</span>}
                 {l.displayName}
               </label>
             ))}

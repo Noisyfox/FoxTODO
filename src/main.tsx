@@ -454,7 +454,16 @@ function App() {
                           onOpen={() => go(id)}
                           role="button"
                         >
-                          <ListIcon size={16} />
+                          {r.doc.emoji ? (
+                            <span
+                              aria-hidden="true"
+                              className="shrink-0 text-base leading-none"
+                            >
+                              {r.doc.emoji}
+                            </span>
+                          ) : (
+                            <ListIcon size={16} />
+                          )}
                           <span>{r.doc.name}</span>
                           {r.conflict ? (
                             <AlertTriangle size={14} />
@@ -528,7 +537,13 @@ function App() {
         <div className="content flex-1 overflow-auto">
           <div className="mb-7 flex items-center gap-4">
             <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-orange-100 text-amber-700">
-              <HeadIcon size={28} strokeWidth={1.6} />
+              {!needle && currentList?.doc.emoji && active !== v.defaultListId ? (
+                <span aria-hidden="true" className="text-[28px] leading-none">
+                  {currentList.doc.emoji}
+                </span>
+              ) : (
+                <HeadIcon size={28} strokeWidth={1.6} />
+              )}
             </div>
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">

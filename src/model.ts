@@ -45,6 +45,7 @@ export interface List {
   id: string;
   name: string;
   group: string;
+  emoji?: string;
   tasks: Task[];
 }
 export interface Binding {

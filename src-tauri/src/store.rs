@@ -115,6 +115,8 @@ pub struct Document {
     pub version: u32,
     pub id: Uuid,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
     #[serde(default)]
     pub group: String,
     pub tasks: Vec<Task>,
@@ -128,6 +130,7 @@ impl Document {
             position: None,
             id,
             name,
+            emoji: None,
             group: String::new(),
             tasks: vec![],
             default_imports: vec![],
