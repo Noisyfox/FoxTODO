@@ -229,6 +229,7 @@ function App() {
       <SortRow
         id={id}
         label={t.title || "未命名任务"}
+        onOpen={() => pick({ list: r.doc.id, id: t.id })}
         key={id}
         className={
           "task " +
@@ -243,10 +244,7 @@ function App() {
         >
           {t.done && <Check size={14} />}
         </button>
-        <button
-          className="task-text"
-          onClick={() => pick({ list: r.doc.id, id: t.id })}
-        >
+        <div className="task-text">
           <strong>{t.title || "未命名任务"}</strong>
           <small>
             {!currentList && <span>{r.doc.name}</span>}
@@ -266,7 +264,7 @@ function App() {
               <span key={s}>#{s}</span>
             ))}
           </small>
-        </button>
+        </div>
         <button
           title={t.important ? "取消重要" : "标记重要"}
           className={"icon star " + (t.important ? "set" : "")}
@@ -402,23 +400,22 @@ function App() {
                           key={id}
                           id={id}
                           label={r.doc.name}
-                          className="sidebar-list-row"
+                          className={
+                            "sidebar-list-row" +
+                            (active === id ? " active" : "")
+                          }
+                          onOpen={() => go(id)}
+                          role="button"
                         >
-                          <button
-                            onClick={() => go(id)}
-                            className={active === id ? "active" : ""}
-                          >
-                            <ListIcon size={16} />
-                            <span>{r.doc.name}</span>
-                            {r.conflict ? (
-                              <AlertTriangle size={14} />
-                            ) : (
-                              <small>
-                                {r.doc.tasks.filter((t) => !t.done).length ||
-                                  ""}
-                              </small>
-                            )}
-                          </button>
+                          <ListIcon size={16} />
+                          <span>{r.doc.name}</span>
+                          {r.conflict ? (
+                            <AlertTriangle size={14} />
+                          ) : (
+                            <small>
+                              {r.doc.tasks.filter((t) => !t.done).length || ""}
+                            </small>
+                          )}
                         </SortRow>
                       ))}
                     </SortArea>
