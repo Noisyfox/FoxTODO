@@ -67,7 +67,7 @@ export function Detail({
         .slice(0, 16)
     : "";
   return (
-    <aside className="detail">
+    <div className="detail-content">
       <div className="detail-head">
         <span>{list}</span>
         <button className="icon" onClick={close} title="关闭任务详情">
@@ -300,6 +300,6 @@ export function Detail({
         <Trash2 size={15} />
         删除任务
       </button>
-    </aside>
+    </div>
   );
 }

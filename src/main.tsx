@@ -55,7 +55,7 @@ import {
   taskItem,
   type OrderedItem,
 } from "./listOrder";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, SidebarLayout } from "./Sidebar";
 import { Detail } from "./Detail";
 import { reminders } from "./alarms";
 import "./style.css";
@@ -296,7 +296,7 @@ function App() {
               ? "已保存到本机 · 待同步"
               : "已同步";
   return (
-    <div className={"app " + (detail ? "with-detail" : "")}>
+    <SidebarLayout withDetail={!!detail}>
       {nav && (
         <button
           aria-label="关闭导航"
@@ -304,7 +304,7 @@ function App() {
           onClick={() => setNav(false)}
         />
       )}
-      <Sidebar open={nav} withDetail={!!detail}>
+      <Sidebar open={nav}>
         <div className="brand">
           <img src="/fox.svg" alt="" />
           FoxTODO
@@ -614,14 +614,16 @@ function App() {
         </div>
       </main>
       {detail && cur && (
-        <Detail
-          key={detail.id}
-          t={detail}
-          list={cur.doc.name}
-          change={(fn) => editTask(cur, detail.id, fn)}
-          close={() => pick(null)}
-          remove={() => dialog("delete-task")}
-        />
+        <Sidebar side="right">
+          <Detail
+            key={detail.id}
+            t={detail}
+            list={cur.doc.name}
+            change={(fn) => editTask(cur, detail.id, fn)}
+            close={() => pick(null)}
+            remove={() => dialog("delete-task")}
+          />
+        </Sidebar>
       )}
       {(modal || c?.conflict) && (
         <div className="backdrop" role="presentation">
@@ -804,7 +806,7 @@ function App() {
           </div>
         </div>
       )}
-    </div>
+    </SidebarLayout>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
