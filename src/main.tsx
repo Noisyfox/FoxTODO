@@ -35,7 +35,6 @@ import {
   CheckCheck,
   AlertTriangle,
   PanelRight,
-  ArrowUpRight,
   Calendar,
   Trash2,
   Pencil,
@@ -108,7 +107,8 @@ function App() {
     [online, setOnline] = useState(navigator.onLine);
   const addRef = useRef<HTMLInputElement>(null),
     findRef = useRef<HTMLInputElement>(null),
-    menuTrigger = useRef<HTMLButtonElement>(null),
+    appMenuTrigger = useRef<HTMLButtonElement>(null),
+    listMenuTrigger = useRef<HTMLButtonElement>(null),
     dialogOpener = useRef<HTMLElement | null>(null);
   function openNavigation() {
     if (viewport.singlePage && !nav) show({ nav: true }, true);
@@ -199,18 +199,16 @@ function App() {
       if (t) fn(t);
     });
   }
-  function dialog(m: string) {
-    const focused = document.activeElement;
-    dialogOpener.current = focused?.closest('[role="menu"]')
-      ? menuTrigger.current
-      : focused instanceof HTMLElement
-        ? focused
-        : null;
+  function dialog(m: string, opener: Element | null = document.activeElement) {
+    dialogOpener.current = opener instanceof HTMLElement ? opener : null;
     setModal(m);
 
     setInput(m === "rename" ? currentList?.doc.name || "" : "");
     setEmoji(m === "rename" ? currentList?.doc.emoji ?? "" : "");
     setGroup(m === "rename" ? currentList?.doc.group || "" : "");
+  }
+  function onMenuCloseAutoFocus(event: Event) {
+    if (hasOpenOverlay()) event.preventDefault();
   }
   function add() {
     if (!entry.trim() || !v.ready) return;
@@ -328,10 +326,22 @@ function App() {
               : v.records.some((r) => r.dirty)
                 ? "已保存到本机 · 待同步"
                 : "已同步";
+  const statusContent = (
+    <>
+      {v.busy ? (
+        <RefreshCw size={14} className="animate-spin" />
+      ) : online ? (
+        <CheckCheck size={15} />
+      ) : (
+        <CloudOff size={15} />
+      )}
+      {status}
+    </>
+  );
   return (
     <SidebarLayout viewport={viewport} withDetail={!!detail}>
       <Sidebar open={nav}>
-        <div className="flex items-center gap-2.5 px-2.5 pb-7 text-2xl font-bold tracking-tight text-primary [&_img]:size-9">
+        <div className="@container flex items-center gap-1 pb-7">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -341,8 +351,32 @@ function App() {
           >
             <ArrowLeft />
           </Button>
-          <img src="/fox.svg" alt="" />
-          FoxTODO
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                ref={appMenuTrigger}
+                variant="ghost"
+                className="h-11 gap-1 text-lg font-bold tracking-tight text-primary has-[>svg]:px-1 @[11rem]:gap-2 @[11rem]:text-2xl @[11rem]:has-[>svg]:px-2.5"
+                aria-label="FoxTODO 菜单"
+              >
+                <img className="size-7 @[11rem]:size-9" src="/fox.svg" alt="" />
+                FoxTODO
+                <ChevronDown className="size-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="data-[state=closed]:hidden"
+              onCloseAutoFocus={onMenuCloseAutoFocus}
+            >
+              <DropdownMenuItem
+                onSelect={() => dialog("cloud", appMenuTrigger.current)}
+              >
+                <Cloud />
+                OneDrive
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="search mb-5 flex items-center gap-2 rounded-md border bg-background px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/50">
           <Search size={16} />
@@ -488,22 +522,6 @@ function App() {
             </Button>
           </nav>
         </div>
-        {v.ready && !v.binding && (
-          <div className="account mt-auto border-t pt-2 [&_strong]:block [&_small]:block [&_small]:text-xs [&_small]:text-muted-foreground">
-            <Button
-              variant="ghost"
-              className="h-auto w-full justify-start text-left [&>svg:last-child]:ml-auto"
-              onClick={() => dialog("cloud")}
-            >
-              <Cloud size={19} />
-              <span>
-                <strong>OneDrive</strong>
-                <small>连接个人账号</small>
-              </span>
-              <ArrowUpRight size={14} />
-            </Button>
-          </div>
-        )}
       </Sidebar>
       <main
         className={
@@ -523,20 +541,19 @@ function App() {
             </Button>
             工作区 <span>/</span> {title}
           </div>
-          <Button
-            variant="ghost"
-            className="status text-xs text-muted-foreground"
-            onClick={() => (v.binding ? void sync() : dialog("cloud"))}
-          >
-            {v.busy ? (
-              <RefreshCw size={14} className="animate-spin" />
-            ) : online ? (
-              <CheckCheck size={15} />
-            ) : (
-              <CloudOff size={15} />
-            )}{" "}
-            {status}
-          </Button>
+          {v.binding ? (
+            <Button
+              variant="ghost"
+              className="status text-xs text-muted-foreground"
+              onClick={() => void sync()}
+            >
+              {statusContent}
+            </Button>
+          ) : (
+            <span className="status inline-flex items-center gap-2 px-3 text-xs text-muted-foreground">
+              {statusContent}
+            </span>
+          )}
         </header>
         <div className="content flex-1 overflow-auto">
           <div className="mb-7 flex items-center gap-4">
@@ -635,40 +652,40 @@ function App() {
                   onValueChange={order}
                 />
               </div>
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    ref={menuTrigger}
-                    title="更多选项"
-                    aria-label="更多选项"
+              {currentList && active !== v.defaultListId && (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      ref={listMenuTrigger}
+                      title="更多选项"
+                      aria-label="更多选项"
+                    >
+                      <Ellipsis size={18} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="data-[state=closed]:hidden"
+                    onCloseAutoFocus={onMenuCloseAutoFocus}
                   >
-                    <Ellipsis size={18} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {currentList && active !== v.defaultListId && (
-                    <>
-                      <DropdownMenuItem onSelect={() => dialog("rename")}>
-                        <Pencil />
-                        编辑清单
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => dialog("delete-list")}
-                        variant="destructive"
-                      >
-                        <Trash2 />
-                        删除清单
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuItem onSelect={() => dialog("cloud")}>
-                    <Cloud />
-                    OneDrive
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <DropdownMenuItem
+                      onSelect={() => dialog("rename", listMenuTrigger.current)}
+                    >
+                      <Pencil />
+                      编辑清单
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => dialog("delete-list", listMenuTrigger.current)}
+                      variant="destructive"
+                    >
+                      <Trash2 />
+                      删除清单
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
           <div className="task-list">{taskRows(open)}</div>
