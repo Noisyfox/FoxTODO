@@ -1,0 +1,11 @@
+{
+  "identifier": "main",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:allow-open-url",
+    "notification:default",
+    "dialog:allow-save",
+    "fs:allow-write-file"
+  ]
+}
