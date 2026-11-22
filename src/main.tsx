@@ -360,16 +360,18 @@ function App() {
             </button>
           </nav>
         </div>
-        <div className="account">
-          <button onClick={() => dialog("cloud")}>
-            <Cloud size={19} />
-            <span>
-              <strong>OneDrive</strong>
-              <small>{v.binding?.label || "连接个人账号"}</small>
-            </span>
-            <ArrowUpRight size={14} />
-          </button>
-        </div>
+        {v.ready && !v.binding && (
+          <div className="account">
+            <button onClick={() => dialog("cloud")}>
+              <Cloud size={19} />
+              <span>
+                <strong>OneDrive</strong>
+                <small>连接个人账号</small>
+              </span>
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+        )}
       </aside>
       <main>
         <header>
@@ -478,25 +480,32 @@ function App() {
                   <option value="star">重要优先</option>
                 </select>
               </label>
-              {currentList && (
-                <button
-                  title="清单选项"
-                  className="icon"
-                  onClick={() => setMenu(!menu)}
-                >
-                  <Ellipsis size={18} />
-                </button>
-              )}
+              <button
+                title="更多选项"
+                aria-expanded={menu}
+                className="icon"
+                onClick={() => setMenu(!menu)}
+              >
+                <Ellipsis size={18} />
+              </button>
             </div>
             {menu && (
               <div className="popover">
-                <button onClick={() => dialog("rename")}>
-                  <Pencil size={15} />
-                  编辑清单
-                </button>
-                <button onClick={() => dialog("delete-list")}>
-                  <Trash2 size={15} />
-                  删除清单
+                {currentList && (
+                  <>
+                    <button onClick={() => dialog("rename")}>
+                      <Pencil size={15} />
+                      编辑清单
+                    </button>
+                    <button onClick={() => dialog("delete-list")}>
+                      <Trash2 size={15} />
+                      删除清单
+                    </button>
+                  </>
+                )}
+                <button onClick={() => dialog("cloud")}>
+                  <Cloud size={15} />
+                  OneDrive
                 </button>
               </div>
             )}
