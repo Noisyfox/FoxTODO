@@ -1,6 +1,7 @@
 mod auth;
 mod graph;
 mod import;
+mod merge;
 mod network;
 mod oauth;
 mod reminders;

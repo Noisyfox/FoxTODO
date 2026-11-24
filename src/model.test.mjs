@@ -8,6 +8,7 @@ test("repeated completion produces exactly one next occurrence even after undo",
   list.tasks = [task];
   complete(list, task.id);
   assert.equal(list.tasks[1].due, "2026-02-28");
+  assert.equal(list.tasks[1].occurrenceOf, task.id);
   complete(list, task.id);
   complete(list, task.id);
   assert.equal(list.tasks.length, 2);

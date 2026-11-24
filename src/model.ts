@@ -23,6 +23,7 @@ export interface Recurrence {
   };
 }
 export interface Task {
+  occurrenceOf?: string;
   position?: Position;
   id: string;
   title: string;
@@ -213,6 +214,7 @@ export function complete(list: List, id: string) {
   if (successor) return;
   const t = structuredClone(task);
   t.id = occurrenceId(id, date);
+  t.occurrenceOf = id;
   delete t.position;
   t.due = date;
   t.repeatAnchor = dateKey(anchor);
