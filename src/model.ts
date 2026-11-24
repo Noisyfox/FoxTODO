@@ -55,12 +55,19 @@ export interface Binding {
   label: string;
   clientId: string;
 }
+export type ConflictKey =
+  | { kind: "name" | "emoji" | "group" | "listPosition" }
+  | { kind: "task" | "taskPosition" | "recurrence"; id: string };
+export interface ConflictIssue {
+  key: ConflictKey;
+  members?: string[];
+}
 export interface Row {
   doc: List;
   revision: number;
   dirty: boolean;
   deleted: boolean;
-  conflict: null | { remote: null | { doc: List } };
+  conflict: null | { remote: null | { doc: List }; issues: ConflictIssue[] | null };
 }
 export interface View {
   defaultListId: string;

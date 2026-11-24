@@ -54,18 +54,26 @@ fn login_client(binding: Option<&Binding>) -> Option<&str> {
 }
 
 // The merge ancestor can contain large attachments and belongs only in local storage.
-fn row(r: &Record) -> Value {
-    json!({"doc":r.doc,"revision":r.revision,"dirty":r.dirty,"deleted":r.deleted,"conflict":r.conflict})
+fn row(mut r: Record) -> Value {
+    let conflict = r.conflict.as_ref().map(|c| {
+        let issues = c
+            .remote
+            .as_ref()
+            .and_then(|v| r.merge_with(v, |_| merge::Side::Local))
+            .map(|m| m.issues);
+        json!({"remote":c.remote,"issues":issues})
+    });
+    if conflict.is_none() {
+        import::show_legacy_icon(&mut r.doc);
+    }
+    json!({"doc":r.doc,"revision":r.revision,"dirty":r.dirty,"deleted":r.deleted,"conflict":conflict})
 }
 #[tauri::command]
 fn snapshot(app: State<App>) -> Result<Value> {
     let s = guard(&app.store)?;
-    let mut records = s.records()?;
-    for r in &mut records {
-        import::show_legacy_icon(&mut r.doc);
-    }
+    let records = s.records()?;
     Ok(
-        json!({"defaultListId":DEFAULT_LIST_ID,"records":records.iter().map(row).collect::<Vec<_>>(),"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
+        json!({"defaultListId":DEFAULT_LIST_ID,"records":records.into_iter().map(row).collect::<Vec<_>>(),"binding":s.settings.binding,"oneDriveAvailable":login_client(s.settings.binding.as_ref()).is_some(),"platform":std::env::consts::OS}),
     )
 }
 #[tauri::command]
@@ -82,12 +90,22 @@ fn save_list(
     }
     let id = doc.id;
     s.edit(doc, revision, deleted)?;
-    Ok(row(&s.get(id)?.ok_or("保存失败")?))
+    Ok(row(s.get(id)?.ok_or("保存失败")?))
 }
 #[tauri::command]
-async fn resolve(app: State<'_, App>, id: Uuid, revision: u64, choice: String) -> Result<()> {
+async fn resolve(
+    app: State<'_, App>,
+    id: Uuid,
+    revision: u64,
+    choice: String,
+    workspace: Option<Binding>,
+) -> Result<()> {
     let _op = app.operation.lock().await;
-    guard(&app.store)?.resolve(id, revision, &choice)
+    let store = guard(&app.store)?;
+    if store.settings.binding != workspace {
+        return Err("当前账号或目录已切换".into());
+    }
+    store.resolve(id, revision, &choice)
 }
 #[tauri::command]
 async fn resolve_items(

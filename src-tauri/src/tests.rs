@@ -446,3 +446,72 @@ async fn third_edit_during_merged_upload_survives_conditional_retry_and_restart(
         .all(|t| t.done));
     assert!(!get(&b, id).dirty);
 }
+
+#[test]
+fn conflict_view_exposes_item_keys_but_keeps_ancestor_out_of_ipc() {
+    let mut doc = Document::new(Uuid::new_v4(), "原名".into());
+    doc.tasks.push(Task::default());
+    let task = doc.tasks[0].id;
+    let mut remote = Remote {
+        doc,
+        base: Base {
+            id: "item".into(),
+            etag: "1".into(),
+        },
+    };
+    let mut r = Record::adopt(remote.clone());
+    r.begin_edit();
+    r.doc.tasks[0].title = "手机".into();
+    remote.doc.tasks[0].title = "电脑".into();
+    remote.base.etag = "2".into();
+    r.conflict = Some(Conflict {
+        remote: Some(remote),
+    });
+    let view = crate::row(r.clone());
+    assert!(view.get("base_doc").is_none());
+    assert_eq!(
+        view["conflict"]["issues"],
+        serde_json::json!([{"key":{"kind":"task","id":task}}])
+    );
+    r.base_doc = None;
+    assert!(crate::row(r)["conflict"]["issues"].is_null());
+}
+
+#[tokio::test]
+async fn keeping_both_copies_preserves_independent_changes_in_each() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (_db, b) = device();
+    let id = add(&a, "清单");
+    change(&a, id, |d| d.tasks = vec![Task::default(), Task::default()]);
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    change(&a, id, |d| {
+        d.tasks[0].notes = "云端".into();
+        d.tasks.pop();
+    });
+    change(&b, id, |d| {
+        d.tasks[0].notes = "本机".into();
+        d.tasks.push(Task {
+            title: "新增".into(),
+            ..Default::default()
+        });
+    });
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    let rev = get(&b, id).revision;
+    b.lock().unwrap().resolve(id, rev, "both").unwrap();
+    ok_sync(&c, &b).await;
+    let docs = c.items.lock().unwrap();
+    assert_eq!(docs.len(), 2);
+    for record in docs.values() {
+        assert_eq!(record.doc.tasks.len(), 2);
+        assert_eq!(record.doc.tasks[1].title, "新增");
+        let expected = if record.doc.id == id {
+            "云端"
+        } else {
+            "本机"
+        };
+        assert_eq!(record.doc.tasks[0].notes, expected);
+    }
+}
