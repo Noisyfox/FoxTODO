@@ -92,10 +92,7 @@ async fn reconcile(
                 .as_ref()
                 .is_some_and(|h| v.doc.bytes().is_ok_and(|b| hash(b) == *h));
             if !current.deleted && current.doc == v.doc || was_sent {
-                current.base = Some(v.base.clone());
-                current.dirty = current.deleted || current.doc != v.doc;
-                current.sending = None;
-                current.conflict = None;
+                current.acknowledge(v.base.clone(), v.doc.clone());
                 return s.save(&current);
             }
         }
@@ -126,6 +123,7 @@ async fn reconcile(
                 s.remove(id)?
             } else {
                 current.base = None;
+                current.base_doc = None;
                 s.save(&current)?
             }
         }
@@ -144,9 +142,7 @@ async fn reconcile(
         let saved = cloud.upload(parent, &r.doc, r.base.as_ref()).await?;
         let s = guard(store)?;
         if let Some(mut current) = s.get(id)? {
-            current.base = Some(saved);
-            current.sending = None;
-            current.dirty = current.revision != r.revision;
+            current.acknowledge(saved, r.doc);
             s.save(&current)?;
         }
     }

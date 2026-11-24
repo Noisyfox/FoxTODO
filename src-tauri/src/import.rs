@@ -114,9 +114,9 @@ fn add_default_tasks(store: &Store, source: &Document) -> Result<bool> {
     if imported {
         return Ok(false);
     }
+    tasks.begin_edit();
     tasks.doc.tasks.extend(additions);
     tasks.doc.default_imports.push(source.id);
-    tasks.dirty = true;
     tasks.revision += 1;
     store.save(&tasks)?;
     Ok(true)

@@ -179,13 +179,19 @@ pub struct Record {
     pub dirty: bool,
     pub deleted: bool,
     pub base: Option<Base>,
+    // When clean, doc itself is the acknowledged version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_doc: Option<Document>,
     pub conflict: Option<Conflict>,
     pub sending: Option<String>,
 }
 impl Record {
     pub fn new(doc: Document) -> Self {
+        let base_doc =
+            (doc.id == DEFAULT_LIST_ID).then(|| Document::new(DEFAULT_LIST_ID, "任务".into()));
         Self {
             doc,
+            base_doc,
             revision: 1,
             dirty: true,
             deleted: false,
@@ -194,9 +200,23 @@ impl Record {
             sending: None,
         }
     }
+    pub fn begin_edit(&mut self) {
+        if !self.dirty && self.base.is_some() {
+            self.base_doc = Some(self.doc.clone());
+        }
+        self.dirty = true;
+    }
+    pub fn acknowledge(&mut self, base: Base, doc: Document) {
+        self.dirty = self.deleted || self.doc != doc;
+        self.base = Some(base);
+        self.base_doc = self.dirty.then_some(doc);
+        self.sending = None;
+        self.conflict = None;
+    }
     pub fn adopt(remote: Remote) -> Self {
         Self {
             base: Some(remote.base),
+            base_doc: None,
             dirty: false,
             ..Record::new(remote.doc)
         }
@@ -304,9 +324,9 @@ impl Store {
             Some(_) => return Err("清单已更新，请重新打开后编辑".into()),
             None => return Err("清单已被移除，请重新打开".into()),
         };
+        r.begin_edit();
         r.doc = doc;
         r.deleted = deleted;
-        r.dirty = true;
         r.revision += 1;
         self.save(&r)
     }
@@ -335,7 +355,7 @@ impl Store {
                 None => self.remove(id),
             },
             "local" => {
-                r.base = c.remote.map(|x| x.base);
+                (r.base, r.base_doc) = c.remote.map(|x| (x.base, x.doc)).unzip();
                 r.sending = None;
                 r.dirty = true;
                 r.revision += 1;

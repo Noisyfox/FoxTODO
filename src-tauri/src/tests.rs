@@ -108,6 +108,28 @@ async fn ok_sync(c: &FakeDrive, s: &Mutex<Store>) {
     let errors = sync::run(c, s, "root").await.unwrap();
     assert!(errors.is_empty(), "{errors:?}")
 }
+#[tokio::test]
+async fn first_edit_keeps_acknowledged_content_across_reopen() {
+    let (dir, phone) = device();
+    let drive = FakeDrive::default();
+    let id = add(&phone, "原名");
+    ok_sync(&drive, &phone).await;
+    assert!(get(&phone, id).base_doc.is_none());
+    edit(&phone, id, "草稿", false);
+    edit(&phone, id, "定稿", false);
+    drop(phone);
+    let phone = Mutex::new(Store::open(dir.path().into()).unwrap());
+    let record = get(&phone, id);
+    assert_eq!(record.base_doc.as_ref().unwrap().name, "原名");
+    let mut legacy = serde_json::to_value(record).unwrap();
+    legacy.as_object_mut().unwrap().remove("base_doc");
+    assert!(serde_json::from_value::<Record>(legacy)
+        .unwrap()
+        .base_doc
+        .is_none());
+    ok_sync(&drive, &phone).await;
+    assert!(get(&phone, id).base_doc.is_none());
+}
 #[test]
 fn offline_reopen_and_workspace_isolation() {
     let (dir, s) = device();
@@ -168,7 +190,7 @@ async fn lost_response_after_commit_handles_later_edits() {
     assert!(!sync::run(&c, &s, "root").await.unwrap().is_empty());
     edit(&s, id, "v2", false);
     ok_sync(&c, &s).await;
-    assert!(get(&s, id).dirty);
+    assert_eq!(get(&s, id).base_doc.unwrap().name, "v1");
     ok_sync(&c, &s).await;
     assert_eq!(c.items.lock().unwrap()[&id].doc.name, "v2");
     assert_eq!(c.items.lock().unwrap().len(), 1)
@@ -184,7 +206,7 @@ async fn edit_during_upload_stays_pending() {
         edit(&s, id, "v2", false);
         c.proceed.notify_one()
     });
-    assert!(get(&s, id).dirty);
+    assert_eq!(get(&s, id).base_doc.unwrap().name, "v1");
     assert_eq!(get(&s, id).doc.name, "v2");
     ok_sync(&c, &s).await;
     assert!(!get(&s, id).dirty)
