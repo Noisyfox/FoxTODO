@@ -47,7 +47,7 @@ Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模�
 
 macOS Nightly 使用临时签名（ad hoc），尚未经过 Apple 公证。将 FoxTODO 拖入「应用程序」后首次打开时，如果 macOS 提示无法验证开发者，请确认安装包来自本仓库的 Nightly，再到「系统设置 → 隐私与安全性」为 FoxTODO 选择「仍要打开」。[Apple 的首次打开说明](https://support.apple.com/zh-cn/102445)
 
-推送任意分支、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
+推送到 `main`、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
 
 正式签名使用 GitHub Environment `android-release`，其部署规则仅允许 `main` 分支。该环境内的 `ANDROID_KEYSTORE_BASE64` 是 PKCS#12 密钥库的 Base64 编码，`ANDROID_KEYSTORE_PASSWORD` 是密钥库密码，别名为 `foxtodo`。签名任务使用同一次运行生成的 APK，签名后会验证 APK 签名以及 Android 登录回调与实际签名证书是否一致。
 
