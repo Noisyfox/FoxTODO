@@ -52,10 +52,19 @@ const repeatOptions = [
   { value: "monthly", label: "每月" },
   { value: "yearly", label: "每年" },
 ];
-const importedRepeatOptions = [
+export const importedRepeatOptions = [
   ...repeatOptions,
   { value: "custom", label: "导入的自定义规则" },
 ];
+
+export async function downloadAttachment(a: Attachment) {
+  const path = await save({ defaultPath: a.name.replace(/[/\\]/g, "_") });
+  if (path)
+    await writeFile(
+      path,
+      Uint8Array.from(atob(a.contentBytes), (c) => c.charCodeAt(0)),
+    );
+}
 
 export function Detail({
   t,
@@ -72,14 +81,6 @@ export function Detail({
 }) {
   const [step, setStep] = useState("");
   const files = t.attachments;
-  async function download(a: Attachment) {
-    const path = await save({ defaultPath: a.name.replace(/[/\\]/g, "_") });
-    if (path)
-      await writeFile(
-        path,
-        Uint8Array.from(atob(a.contentBytes), (c) => c.charCodeAt(0)),
-      );
-  }
   return (
     <div className="detail-content h-full overflow-auto">
       <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -297,7 +298,7 @@ export function Detail({
             variant="ghost"
             className="w-full justify-start overflow-hidden"
             key={i}
-            onClick={() => void download(f).catch(report)}
+            onClick={() => void downloadAttachment(f).catch(report)}
           >
             <Download size={14} />
             {f.name}

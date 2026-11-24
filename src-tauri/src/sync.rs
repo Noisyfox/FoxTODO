@@ -1,5 +1,6 @@
 use crate::{
     graph::{Cloud, Item},
+    merge::{lists_equivalent, Side},
     store::*,
 };
 use std::{
@@ -68,51 +69,104 @@ async fn reconcile(
     item: Option<&Item>,
 ) -> Result<()> {
     let id = r.doc.id;
-    if let Some(c) = &r.conflict {
-        if c.remote.as_ref().map(|v| (&v.base.id, &v.base.etag)) == item.map(|i| (&i.id, &i.etag)) {
-            return Ok(());
-        }
-    }
+    let version = item.map(|i| (&i.id, &i.etag));
     let base = r.base.as_ref().map(|b| (&b.id, &b.etag));
-    if base != item.map(|i| (&i.id, &i.etag)) || r.conflict.is_some() {
-        let remote = match item {
-            Some(i) => Some(cloud.download(i, id).await?),
-            None => None,
+    let pending = if base != version || r.conflict.is_some() {
+        // Re-evaluate a cached conflict too: the user can keep editing offline.
+        let cached = r
+            .conflict
+            .as_ref()
+            .filter(|c| c.remote.as_ref().map(|v| (&v.base.id, &v.base.etag)) == version);
+        let remote = match (cached, item) {
+            (Some(c), _) => c.remote.clone(),
+            (None, Some(i)) => Some(cloud.download(i, id).await?),
+            (None, None) => None,
         };
         let s = guard(store)?;
-        let Some(mut current) = s.get(id)? else {
+        let Some(current) = s.get(id)? else {
             return Ok(());
         };
-        if current.deleted && remote.is_none() {
-            return s.remove(id);
+        let Some(pending) = integrate(&s, current, remote, cached.is_some())? else {
+            return Ok(());
+        };
+        pending
+    } else {
+        r
+    };
+    push(cloud, store, parent, pending).await
+}
+
+// Return a pending write only after its new ancestor is durable, so a crash
+// or another conditional-write failure resumes the same three-way merge.
+fn integrate(
+    store: &Store,
+    mut r: Record,
+    remote: Option<Remote>,
+    cached: bool,
+) -> Result<Option<Record>> {
+    match remote {
+        None if !r.dirty
+            || r.deleted
+            || r.ancestor()
+                .is_some_and(|base| lists_equivalent(base, &r.doc)) =>
+        {
+            store.remove(r.doc.id)?;
+            return Ok(None);
         }
-        if let Some(v) = &remote {
-            let was_sent = current
+        Some(v) => {
+            let was_sent = r
                 .sending
                 .as_ref()
                 .is_some_and(|h| v.doc.bytes().is_ok_and(|b| hash(b) == *h));
-            if !current.deleted && current.doc == v.doc || was_sent {
-                current.base = Some(v.base.clone());
-                current.dirty = current.deleted || current.doc != v.doc;
-                current.sending = None;
-                current.conflict = None;
-                return s.save(&current);
+            if (!r.deleted && r.doc == v.doc) || was_sent {
+                if r.conflict.is_some() {
+                    r.revision += 1;
+                }
+                r.acknowledge(v.base, v.doc);
+                store.save(&r)?;
+                return Ok(None);
             }
-        }
-        if current.dirty {
-            current.conflict = Some(Conflict { remote });
-            current.revision += 1;
-            return s.save(&current);
-        }
-        return match remote {
-            Some(v) => {
+            if !r.dirty {
                 let mut next = Record::adopt(v);
-                next.revision = current.revision + 1;
-                s.save(&next)
+                next.revision = r.revision + 1;
+                store.save(&next)?;
+                return Ok(None);
             }
-            None => s.remove(id),
-        };
+            if r.deleted
+                && r.base.as_ref().is_some_and(|b| b.id == v.base.id)
+                && r.ancestor()
+                    .is_some_and(|base| lists_equivalent(base, &v.doc))
+            {
+                r.acknowledge(v.base, v.doc);
+                r.revision += 1;
+                store.save(&r)?;
+                return Ok(Some(r));
+            }
+            if let Some(result) = r.merge_with(&v, |_| Side::Local) {
+                if result.issues.is_empty() {
+                    r.accept_merge(result.doc, v);
+                    store.save(&r)?;
+                    return Ok(Some(r));
+                }
+            }
+            r.conflict = Some(Conflict { remote: Some(v) });
+        }
+        None => r.conflict = Some(Conflict { remote: None }),
     }
+    if !cached {
+        r.revision += 1;
+        store.save(&r)?;
+    }
+    Ok(None)
+}
+
+async fn push(
+    cloud: &(impl Cloud + Sync),
+    store: &Mutex<Store>,
+    parent: &str,
+    r: Record,
+) -> Result<()> {
+    let id = r.doc.id;
     if !r.dirty {
         return Ok(());
     }
@@ -126,6 +180,7 @@ async fn reconcile(
                 s.remove(id)?
             } else {
                 current.base = None;
+                current.base_doc = None;
                 s.save(&current)?
             }
         }
@@ -144,9 +199,7 @@ async fn reconcile(
         let saved = cloud.upload(parent, &r.doc, r.base.as_ref()).await?;
         let s = guard(store)?;
         if let Some(mut current) = s.get(id)? {
-            current.base = Some(saved);
-            current.sending = None;
-            current.dirty = current.revision != r.revision;
+            current.acknowledge(saved, r.doc);
             s.save(&current)?;
         }
     }

@@ -1,3 +1,4 @@
+use crate::merge::{self, Key, Merge, Side};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -46,7 +47,7 @@ pub struct Attachment {
     pub name: String,
     pub content_bytes: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
     pub list_name: String,
@@ -57,6 +58,8 @@ pub struct Position {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence_of: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
     pub id: Uuid,
@@ -89,6 +92,7 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Self {
+            occurrence_of: None,
             position: None,
             id: Uuid::new_v4(),
             title: String::new(),
@@ -172,6 +176,12 @@ pub struct Remote {
 pub struct Conflict {
     pub remote: Option<Remote>,
 }
+#[derive(Debug, Deserialize)]
+pub struct Decision {
+    pub key: Key,
+    pub side: Side,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
     pub doc: Document,
@@ -179,13 +189,19 @@ pub struct Record {
     pub dirty: bool,
     pub deleted: bool,
     pub base: Option<Base>,
+    // When clean, doc itself is the acknowledged version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_doc: Option<Document>,
     pub conflict: Option<Conflict>,
     pub sending: Option<String>,
 }
 impl Record {
     pub fn new(doc: Document) -> Self {
+        let base_doc =
+            (doc.id == DEFAULT_LIST_ID).then(|| Document::new(DEFAULT_LIST_ID, "任务".into()));
         Self {
             doc,
+            base_doc,
             revision: 1,
             dirty: true,
             deleted: false,
@@ -194,9 +210,56 @@ impl Record {
             sending: None,
         }
     }
+    pub fn begin_edit(&mut self) {
+        if !self.dirty && self.base.is_some() {
+            self.base_doc = Some(self.doc.clone());
+        }
+        self.dirty = true;
+    }
+    pub fn acknowledge(&mut self, base: Base, doc: Document) {
+        self.dirty = self.deleted || self.doc != doc;
+        self.base = Some(base);
+        self.base_doc = self.dirty.then_some(doc);
+        self.sending = None;
+        self.conflict = None;
+    }
+    pub fn ancestor(&self) -> Option<&Document> {
+        let base = self.base_doc.as_ref()?;
+        // If an upload may have committed and both sides subsequently changed,
+        // the last acknowledged document may predate a local edit and its undo.
+        if let Some(sent) = &self.sending {
+            if hash(self.doc.bytes().ok()?) != *sent {
+                return None;
+            }
+        }
+        Some(base)
+    }
+
+    pub fn merge_with(&self, remote: &Remote, choose: impl Fn(Key) -> Side) -> Option<Merge> {
+        if self.deleted
+            || self
+                .base
+                .as_ref()
+                .is_some_and(|base| base.id != remote.base.id)
+        {
+            return None;
+        }
+        Some(merge::merge(
+            self.ancestor()?,
+            &self.doc,
+            &remote.doc,
+            choose,
+        ))
+    }
+    pub fn accept_merge(&mut self, merged: Document, remote: Remote) {
+        self.doc = merged;
+        self.acknowledge(remote.base, remote.doc);
+        self.revision += 1;
+    }
     pub fn adopt(remote: Remote) -> Self {
         Self {
             base: Some(remote.base),
+            base_doc: None,
             dirty: false,
             ..Record::new(remote.doc)
         }
@@ -304,44 +367,87 @@ impl Store {
             Some(_) => return Err("清单已更新，请重新打开后编辑".into()),
             None => return Err("清单已被移除，请重新打开".into()),
         };
+        r.begin_edit();
         r.doc = doc;
         r.deleted = deleted;
-        r.dirty = true;
         r.revision += 1;
         self.save(&r)
     }
-    pub fn resolve(&self, id: Uuid, revision: u64, choice: &str) -> Result<()> {
+    fn pending_conflict(&self, id: Uuid, revision: u64) -> Result<(Record, Conflict)> {
         let mut r = self.get(id)?.ok_or("清单不存在")?;
         if r.revision != revision {
             return Err("冲突内容已更新，请重新查看".into());
         }
         let c = r.conflict.take().ok_or("清单没有冲突")?;
+        Ok((r, c))
+    }
+
+    pub fn resolve_items(&self, id: Uuid, revision: u64, decisions: &[Decision]) -> Result<()> {
+        let (mut r, conflict) = self.pending_conflict(id, revision)?;
+        let remote = conflict.remote.ok_or("请重新查看清单冲突")?;
+        let answers: std::collections::BTreeMap<_, _> =
+            decisions.iter().map(|d| (d.key, d.side)).collect();
+        let result = r
+            .merge_with(&remote, |key| {
+                answers.get(&key).copied().unwrap_or(Side::Local)
+            })
+            .ok_or("请重新查看清单冲突")?;
+        if answers.len() != decisions.len()
+            || answers.len() != result.issues.len()
+            || !result
+                .issues
+                .iter()
+                .all(|issue| answers.contains_key(&issue.key))
+        {
+            return Err("请为每项冲突选择一个版本".into());
+        }
+        r.accept_merge(result.doc, remote);
+        self.save(&r)
+    }
+
+    pub fn resolve(&self, id: Uuid, revision: u64, choice: &str) -> Result<()> {
+        let (mut r, c) = self.pending_conflict(id, revision)?;
         if choice == "both" && !r.deleted {
             let fork_id = Uuid::new_v5(&id, format!("fork-{revision}").as_bytes());
             if self.get(fork_id)?.is_none() {
-                let mut fork = r.doc.clone();
+                let mut fork = c
+                    .remote
+                    .as_ref()
+                    .and_then(|remote| r.merge_with(remote, |_| Side::Local))
+                    .map(|m| m.doc)
+                    .unwrap_or_else(|| r.doc.clone());
                 fork.id = fork_id;
                 fork.name.push_str("（本机副本）");
                 self.save(&Record::new(fork))?;
             }
         }
-        match choice {
-            "both" | "cloud" => match c.remote {
-                Some(v) => {
-                    let mut next = Record::adopt(v);
-                    next.revision = r.revision + 1;
-                    self.save(&next)
+        let side = match choice {
+            "local" => Side::Local,
+            "both" | "cloud" => Side::Cloud,
+            _ => return Err("无效的冲突处理方式".into()),
+        };
+        match c.remote {
+            Some(remote) => {
+                if let Some(result) = r.merge_with(&remote, |_| side) {
+                    r.accept_merge(result.doc, remote);
+                } else {
+                    if side == Side::Cloud {
+                        r.doc = remote.doc.clone();
+                        r.deleted = false;
+                    }
+                    r.acknowledge(remote.base, remote.doc);
+                    r.revision += 1;
                 }
-                None => self.remove(id),
-            },
-            "local" => {
-                r.base = c.remote.map(|x| x.base);
+            }
+            None if side == Side::Cloud => return self.remove(id),
+            None => {
+                r.base = None;
+                r.base_doc = None;
                 r.sending = None;
                 r.dirty = true;
                 r.revision += 1;
-                self.save(&r)
             }
-            _ => Err("无效的冲突处理方式".into()),
         }
+        self.save(&r)
     }
 }

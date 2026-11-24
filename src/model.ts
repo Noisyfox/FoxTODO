@@ -23,6 +23,7 @@ export interface Recurrence {
   };
 }
 export interface Task {
+  occurrenceOf?: string;
   position?: Position;
   id: string;
   title: string;
@@ -54,12 +55,19 @@ export interface Binding {
   label: string;
   clientId: string;
 }
+export type ConflictKey =
+  | { kind: "name" | "emoji" | "group" | "listPosition" }
+  | { kind: "task" | "taskPosition" | "recurrence"; id: string };
+export interface ConflictIssue {
+  key: ConflictKey;
+  members?: string[];
+}
 export interface Row {
   doc: List;
   revision: number;
   dirty: boolean;
   deleted: boolean;
-  conflict: null | { remote: null | { doc: List } };
+  conflict: null | { remote: null | { doc: List }; issues: ConflictIssue[] | null };
 }
 export interface View {
   defaultListId: string;
@@ -213,6 +221,7 @@ export function complete(list: List, id: string) {
   if (successor) return;
   const t = structuredClone(task);
   t.id = occurrenceId(id, date);
+  t.occurrenceOf = id;
   delete t.position;
   t.due = date;
   t.repeatAnchor = dateKey(anchor);

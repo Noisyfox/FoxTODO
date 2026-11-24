@@ -17,9 +17,9 @@ FoxTODO 是面向 Windows、macOS 和 Android 的 Tauri 2 任务应用。无需�
 
 每个清单使用稳定的 UUID 作为 JSON 文件名，名称、分组、任务和附件内容都在文件内。应用在 OneDrive 中只处理自己能识别的清单。客户端通过 Graph 直接访问选定的目录，无需安装 OneDrive 桌面客户端。
 
-在应用数据目录中，每份清单有一份本地工作文件。正文、待上传标记和上次已知的云端版本一起原子写入。关闭应用后可以继续离线编辑。首次同步完成后，对应的云端内容才能离线访问。目录选择与凭据分别保存在本地设置和系统凭据存储中。
+在应用数据目录中，每份清单有一份本地工作文件。编辑时，应用把正文、待上传标记和上次同步的清单内容及版本一起原子写入。关闭应用后可以继续离线编辑。首次同步完成后，对应的云端内容才能离线访问。目录选择与凭据分别保存在本地设置和系统凭据存储中。
 
-应用在编辑后、启动、回到前台、联网和手动刷新时同步，前台也会定期刷新。每次提交一个清单的完整 JSON。并发修改同一清单时，应用保留本机稿，提供保留两份、采用云端版本和采用本机版本的操作。删除与编辑相遇也会提示。退出期间的待上传内容在下次运行并联网后继续处理。
+应用在编辑后、启动、回到前台、联网和手动刷新时同步，前台也会定期刷新。每次提交一个清单的完整 JSON。两台设备离线修改同一清单时，不同任务的增删改会自动合并。任务内容与拖动排序、不同清单属性也可独立合并。两端对同一任务做出不同的内容修改、删除与编辑相遇，或重复任务生成不同的下一期时，可以逐项选择本机或 OneDrive 版本，独立修改会一并保留。整张清单的删除与编辑相遇，或旧数据缺少可靠的共同版本时，应用会提示选择整张清单的处理方式。退出期间的待上传内容在下次运行并联网后继续处理。
 
 系统提醒在设备下载或保存相应任务后安排。Android 的投递时间受系统省电与闹钟权限策略影响。Windows 建议通过安装程序安装，macOS 请从应用包启动，以便系统识别提醒来源。
 
@@ -47,7 +47,7 @@ Rust 持久化、Graph、认证、导入与同步代码在 src-tauri/src。模�
 
 macOS Nightly 使用临时签名（ad hoc），尚未经过 Apple 公证。将 FoxTODO 拖入「应用程序」后首次打开时，如果 macOS 提示无法验证开发者，请确认安装包来自本仓库的 Nightly，再到「系统设置 → 隐私与安全性」为 FoxTODO 选择「仍要打开」。[Apple 的首次打开说明](https://support.apple.com/zh-cn/102445)
 
-推送任意分支、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
+推送到 `main`、打开或更新 PR，或手动运行 **Build FoxTODO** 后，可在对应 Actions 运行的 **Artifacts** 下载 Windows x64 安装程序、macOS Apple Silicon 磁盘映像和 Android ARM64 未签名 APK。推送到 `main` 或在 `main` 手动运行时，还会生成可直接安装的 `FoxTODO-android-arm64-signed`。分发时使用其中的 `FoxTODO-android-arm64-release.apk`。从使用其他证书的调试版切换时，Android 会拒绝覆盖安装，卸载前请先确认数据已同步。
 
 正式签名使用 GitHub Environment `android-release`，其部署规则仅允许 `main` 分支。该环境内的 `ANDROID_KEYSTORE_BASE64` 是 PKCS#12 密钥库的 Base64 编码，`ANDROID_KEYSTORE_PASSWORD` 是密钥库密码，别名为 `foxtodo`。签名任务使用同一次运行生成的 APK，签名后会验证 APK 签名以及 Android 登录回调与实际签名证书是否一致。
 

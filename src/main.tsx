@@ -60,6 +60,7 @@ import {
   type Row,
 } from "./model";
 import { CloudPanel } from "./CloudPanel";
+import { ItemConflicts } from "./ItemConflicts";
 import { SortArea, SortRow } from "./SortArea";
 import {
   compareOrder,
@@ -757,10 +758,19 @@ function App() {
             }}
             showCloseButton={false}
             aria-describedby={undefined}
-            className="max-h-[94dvh] overflow-y-auto sm:max-w-md"
+            className={c?.conflict?.issues ? "max-h-[94dvh] overflow-y-auto sm:max-w-2xl" : "max-h-[94dvh] overflow-y-auto sm:max-w-md"}
             onPointerDownOutside={(event) => event.preventDefault()}
           >
-            {c?.conflict ? (
+            {c?.conflict?.issues && c.conflict.remote ? (
+              <ItemConflicts
+                key={c.doc.id + ":" + c.revision}
+                view={v}
+                row={c}
+                cloud={c.conflict.remote.doc}
+                issues={c.conflict.issues}
+                close={() => setConflict("")}
+              />
+            ) : c?.conflict ? (
               <section className="modal-card">
                 <AlertTriangle className="modal-symbol" />
                 <DialogTitle>清单修改冲突</DialogTitle>
@@ -816,8 +826,8 @@ function App() {
                       ["local", "确认删除云端清单"],
                     ]
                   : [
-                      ["both", "保留两份"],
-                      ["cloud", "使用云端版本"],
+                      ["both", c.conflict.remote ? "保留两份" : "另存本机副本并接受删除"],
+                      ["cloud", c.conflict.remote ? "使用云端版本" : "接受云端删除"],
                       ["local", "使用本机版本"],
                     ]
                 ).map(([choice, text], i) => (
@@ -830,6 +840,7 @@ function App() {
                         id: c.doc.id,
                         revision: c.revision,
                         choice,
+                        workspace: v.binding,
                       })
                         .then(async () => {
                           setConflict("");
