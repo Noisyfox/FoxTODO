@@ -220,8 +220,15 @@ pub fn merge(
     doc.group = choices
         .value(Key::Group, &base.group, &local.group, &cloud.group)
         .clone();
-    let pos = |d: &Document| d.position.clone().unwrap_or_else(|| anchor(d, 0));
-    let position = choices.value(Key::ListPosition, pos(base), pos(local), pos(cloud));
+    let original = base.position.clone().unwrap_or_else(|| anchor(base, 0));
+    let position = choices
+        .value(
+            Key::ListPosition,
+            &original,
+            local.position.as_ref().unwrap_or(&original),
+            cloud.position.as_ref().unwrap_or(&original),
+        )
+        .clone();
     if position != anchor(&doc, 0) {
         doc.position = Some(position);
     }
@@ -238,6 +245,15 @@ pub fn merge(
     let b = tasks(base);
     let mut l = tasks(local);
     let mut r = tasks(cloud);
+    // Dragging always writes a position. Older clients and external list edits
+    // can rename a list or remove a neighbor without materializing its anchors.
+    for (doc, placed) in [(local, &mut l), (cloud, &mut r)] {
+        for t in doc.tasks.iter().filter(|t| t.position.is_none()) {
+            if let Some(previous) = b.get(&t.id) {
+                placed.get_mut(&t.id).unwrap().position = previous.position.clone();
+            }
+        }
+    }
     // Concurrent imports and recurring completions can insert the same ID at
     // different array indices. Neither device explicitly dragged that task.
     let implicit_local: BTreeSet<_> = local

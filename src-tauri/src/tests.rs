@@ -259,3 +259,190 @@ async fn racing_commits_and_stale_conflict_decisions() {
     ok_sync(&c, &a).await;
     assert_eq!(get(&a, id).conflict.unwrap().remote.unwrap().doc.name, "B2")
 }
+
+fn change(s: &Mutex<Store>, id: Uuid, f: impl FnOnce(&mut Document)) {
+    let mut r = get(s, id);
+    f(&mut r.doc);
+    s.lock().unwrap().edit(r.doc, r.revision, false).unwrap();
+}
+
+#[tokio::test]
+async fn two_offline_devices_merge_and_publish_in_one_sync() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (_db, b) = device();
+    let id = add(&a, "清单");
+    change(&a, id, |d| d.tasks = vec![Task::default(), Task::default()]);
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    change(&a, id, |d| d.tasks[0].done = true);
+    change(&b, id, |d| d.tasks[1].notes = "保留".into());
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    assert!(!get(&b, id).dirty);
+    ok_sync(&c, &a).await;
+    let doc = get(&a, id).doc;
+    assert_eq!(doc, get(&b, id).doc);
+    assert!(doc.tasks[0].done);
+    assert_eq!(doc.tasks[1].notes, "保留");
+}
+
+#[tokio::test]
+async fn mixed_conflict_decisions_after_restart_keep_independent_edits() {
+    use crate::merge::{Key, Side};
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (dir, b) = device();
+    let id = add(&a, "清单");
+    change(&a, id, |d| d.tasks = vec![Task::default(), Task::default()]);
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    change(&a, id, |d| {
+        d.name = "电脑".into();
+        d.tasks[0].title = "电脑标题".into();
+        d.tasks.pop();
+    });
+    change(&b, id, |d| {
+        d.name = "手机".into();
+        d.tasks[0].title = "手机标题".into();
+        d.tasks.push(Task {
+            title: "新增".into(),
+            ..Default::default()
+        });
+    });
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    let rev = get(&b, id).revision;
+    drop(b);
+    let b = Mutex::new(Store::open(dir.path().into()).unwrap());
+    ok_sync(&c, &b).await;
+    assert_eq!(get(&b, id).revision, rev);
+    let decisions = [
+        Decision {
+            key: Key::Name,
+            side: Side::Local,
+        },
+        Decision {
+            key: Key::Task(get(&b, id).doc.tasks[0].id),
+            side: Side::Cloud,
+        },
+    ];
+    {
+        let store = b.lock().unwrap();
+        assert!(store.resolve_items(id, rev, &decisions[..1]).is_err());
+        assert!(store.resolve_items(id, rev - 1, &decisions).is_err());
+        store.resolve_items(id, rev, &decisions).unwrap();
+    }
+    ok_sync(&c, &b).await;
+    ok_sync(&c, &a).await;
+    let doc = get(&a, id).doc;
+    assert_eq!(doc.name, "手机");
+    assert_eq!(doc.tasks.len(), 2);
+    assert_eq!(doc.tasks[0].title, "电脑标题");
+    assert_eq!(doc.tasks[1].title, "新增");
+}
+
+#[tokio::test]
+async fn first_default_list_uses_empty_origin_but_legacy_dirty_record_needs_review() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (_db, b) = device();
+    let (_dc, old) = device();
+    for s in [&a, &b, &old] {
+        let mut doc = Document::new(DEFAULT_LIST_ID, "任务".into());
+        doc.tasks.push(Task::default());
+        s.lock().unwrap().edit(doc, 0, false).unwrap();
+    }
+    let mut legacy = get(&old, DEFAULT_LIST_ID);
+    legacy.base_doc = None;
+    old.lock().unwrap().save(&legacy).unwrap();
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    ok_sync(&c, &a).await;
+    assert_eq!(get(&a, DEFAULT_LIST_ID).doc.tasks.len(), 2);
+    ok_sync(&c, &old).await;
+    assert!(get(&old, DEFAULT_LIST_ID).conflict.is_some());
+    assert_eq!(get(&old, DEFAULT_LIST_ID).doc.tasks.len(), 1);
+}
+
+#[tokio::test]
+async fn cached_conflict_can_be_resolved_by_later_local_edits() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (_db, b) = device();
+    let id = add(&a, "原名");
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    edit(&a, id, "电脑", false);
+    edit(&b, id, "手机", false);
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    assert!(get(&b, id).conflict.is_some());
+    change(&b, id, |d| {
+        d.name = "电脑".into();
+        d.tasks.push(Task::default());
+    });
+    ok_sync(&c, &b).await;
+    assert!(get(&b, id).conflict.is_none());
+    assert_eq!(c.items.lock().unwrap()[&id].doc.tasks.len(), 1);
+}
+
+#[tokio::test]
+async fn reverted_edit_allows_cloud_deletion_but_uncertain_upload_preserves_undo() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (_db, b) = device();
+    let id = add(&a, "原名");
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    edit(&a, id, "一", false);
+    c.lose_reply.store(true, Ordering::SeqCst);
+    assert!(!sync::run(&c, &a, "root").await.unwrap().is_empty());
+    ok_sync(&c, &b).await;
+    change(&b, id, |d| d.tasks.push(Task::default()));
+    ok_sync(&c, &b).await;
+    edit(&a, id, "原名", false);
+    ok_sync(&c, &a).await;
+    assert!(get(&a, id).conflict.is_some());
+    let rev = get(&a, id).revision;
+    a.lock().unwrap().resolve(id, rev, "cloud").unwrap();
+    edit(&a, id, "临时名", false);
+    edit(&a, id, "一", false);
+    edit(&b, id, "一", true);
+    ok_sync(&c, &b).await;
+    ok_sync(&c, &a).await;
+    assert!(a.lock().unwrap().get(id).unwrap().is_none());
+}
+
+#[tokio::test]
+async fn third_edit_during_merged_upload_survives_conditional_retry_and_restart() {
+    let c = FakeDrive::default();
+    let (_da, a) = device();
+    let (dir, b) = device();
+    let id = add(&a, "清单");
+    change(&a, id, |d| {
+        d.tasks = vec![Task::default(), Task::default(), Task::default()]
+    });
+    ok_sync(&c, &a).await;
+    ok_sync(&c, &b).await;
+    change(&a, id, |d| d.tasks[0].done = true);
+    change(&b, id, |d| d.tasks[1].done = true);
+    ok_sync(&c, &a).await;
+    c.pause.store(true, Ordering::SeqCst);
+    let (slow, _) = tokio::join!(sync::run(&c, &b, "root"), async {
+        c.started.notified().await;
+        change(&a, id, |d| d.tasks[2].done = true);
+        ok_sync(&c, &a).await;
+        c.proceed.notify_one();
+    });
+    assert_eq!(slow.unwrap(), vec!["412"]);
+    drop(b);
+    let b = Mutex::new(Store::open(dir.path().into()).unwrap());
+    ok_sync(&c, &b).await;
+    assert!(c.items.lock().unwrap()[&id]
+        .doc
+        .tasks
+        .iter()
+        .all(|t| t.done));
+    assert!(!get(&b, id).dirty);
+}

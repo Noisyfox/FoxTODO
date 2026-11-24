@@ -90,6 +90,21 @@ async fn resolve(app: State<'_, App>, id: Uuid, revision: u64, choice: String) -
     guard(&app.store)?.resolve(id, revision, &choice)
 }
 #[tauri::command]
+async fn resolve_items(
+    app: State<'_, App>,
+    id: Uuid,
+    revision: u64,
+    decisions: Vec<Decision>,
+    workspace: Option<Binding>,
+) -> Result<()> {
+    let _op = app.operation.lock().await;
+    let store = guard(&app.store)?;
+    if store.settings.binding != workspace {
+        return Err("当前账号或目录已切换".into());
+    }
+    store.resolve_items(id, revision, &decisions)
+}
+#[tauri::command]
 async fn login(
     handle: AppHandle,
     app: State<'_, App>,
@@ -331,6 +346,7 @@ pub fn run() {
             snapshot,
             save_list,
             resolve,
+            resolve_items,
             login,
             cancel_login,
             folders,
