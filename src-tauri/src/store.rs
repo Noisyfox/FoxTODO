@@ -314,7 +314,90 @@ impl Store {
     fn dir(&self) -> PathBuf {
         self.directory(self.settings.binding.as_ref())
     }
+    // Both list files must be visible together to edits and sync. Replay the
+    // durable pair if a previous write was interrupted, including on restart.
+    fn finish_move(&self, records: &[Record; 2]) -> Result<()> {
+        let dir = self.dir();
+        for r in records {
+            atomic(&dir.join(format!("{}.json", r.doc.id)), r)?;
+        }
+        fs::remove_file(dir.join("pending-move")).map_err(err)
+    }
+
+    fn recover_move(&self) -> Result<()> {
+        let journal = self.dir().join("pending-move");
+        if journal.try_exists().map_err(err)? {
+            self.finish_move(&read(&journal)?)?;
+        }
+        Ok(())
+    }
+
+    pub fn move_task(
+        &self,
+        source: Uuid,
+        destination: Uuid,
+        task: Uuid,
+        destination_revision: u64,
+        position: Option<Position>,
+    ) -> Result<[Record; 2]> {
+        if source == destination {
+            return Err("任务已在此清单中".into());
+        }
+        let mut from = self
+            .get(source)?
+            .filter(|r| !r.deleted)
+            .ok_or("来源清单已不存在")?;
+        let mut to = match self.get(destination)? {
+            Some(r) if !r.deleted && r.revision == destination_revision => r,
+            None if destination == DEFAULT_LIST_ID && destination_revision == 0 => {
+                Record::new(Document::new(destination, "任务".into()))
+            }
+            _ => return Err("目标清单已更新，请重试".into()),
+        };
+        let index = from
+            .doc
+            .tasks
+            .iter()
+            .position(|t| t.id == task)
+            .ok_or("任务已被移除")?;
+        if to.doc.tasks.iter().any(|t| t.id == task) {
+            return Err("目标清单中已有此任务".into());
+        }
+
+        from.begin_edit();
+        to.begin_edit();
+        // Apply the same legacy import normalization the editor sees, before
+        // moving the last task that identifies an imported list.
+        for r in [&mut from, &mut to] {
+            if r.conflict.is_none() {
+                crate::import::show_legacy_icon(&mut r.doc);
+            }
+        }
+        let mut moved = from.doc.tasks.remove(index);
+        // Legacy tasks derive their order from their original array index.
+        for (i, t) in from.doc.tasks.iter_mut().enumerate().skip(index) {
+            t.position.get_or_insert_with(|| Position {
+                list_name: from.doc.name.clone(),
+                list_id: source,
+                index: i + 1,
+                rank: "a0".into(),
+            });
+        }
+        moved.position = position;
+        to.doc.tasks.push(moved);
+        from.revision += 1;
+        to.revision += 1;
+        let records = [from, to];
+        for r in &records {
+            r.doc.validate(r.doc.id)?;
+        }
+        atomic(&self.dir().join("pending-move"), &records)?;
+        self.finish_move(&records)?;
+        Ok(records)
+    }
+
     pub fn records(&self) -> Result<Vec<Record>> {
+        self.recover_move()?;
         let dir = self.dir();
         if !dir.exists() {
             return Ok(vec![]);
@@ -329,6 +412,7 @@ impl Store {
             .collect()
     }
     pub fn get(&self, id: Uuid) -> Result<Option<Record>> {
+        self.recover_move()?;
         let p = self.dir().join(format!("{id}.json"));
         if p.exists() {
             Ok(Some(read(&p)?))
@@ -337,13 +421,16 @@ impl Store {
         }
     }
     pub fn save(&self, r: &Record) -> Result<()> {
+        self.recover_move()?;
         r.doc.validate(r.doc.id)?;
         atomic(&self.dir().join(format!("{}.json", r.doc.id)), r)
     }
     pub fn remove(&self, id: Uuid) -> Result<()> {
+        self.recover_move()?;
         fs::remove_file(self.dir().join(format!("{id}.json"))).map_err(err)
     }
     pub fn bind(&mut self, b: Binding) -> Result<()> {
+        self.recover_move()?;
         let dir = self.directory(Some(&b));
         if self.settings.binding.is_none() {
             for record in self.records()? {

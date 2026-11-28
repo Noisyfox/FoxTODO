@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { preserveOrder } from "./listOrder";
+import { preserveOrder, transferPosition } from "./listOrder";
 import type { List, Row, View } from "./model";
 type LocalState = View & {
   error: string;
@@ -61,23 +61,46 @@ export function mutate(
   seed?: List,
   deleted = false,
 ) {
-  const workspace = state.binding;
-  update({ saving: state.saving + 1 });
-  return serial(async () => {
-    try {
-      const r = state.records.find((r) => r.doc.id === id),
-        doc = structuredClone(r?.doc ?? seed);
-      if (!doc) throw Error("此清单已不存在");
-      fn(doc);
-      if (r) preserveOrder(r.doc, doc);
-      const saved = await invoke<Row>("save_list", {
+  return save(async (workspace) => {
+    const r = state.records.find((r) => r.doc.id === id),
+      doc = structuredClone(r?.doc ?? seed);
+    if (!doc) throw Error("此清单已不存在");
+    fn(doc);
+    if (r) preserveOrder(r.doc, doc);
+    return [
+      await invoke<Row>("save_list", {
         doc,
         revision: r?.revision ?? 0,
         deleted,
         workspace,
-      });
+      }),
+    ];
+  });
+}
+
+export function moveTask(source: string, destination: string, task: string) {
+  return save((workspace) => {
+    const target = state.records.find((r) => r.doc.id === destination);
+    return invoke<Row[]>("move_task", {
+      source,
+      destination,
+      task,
+      workspace,
+      destinationRevision: target?.revision ?? 0,
+      position: target ? (transferPosition(target.doc) ?? null) : null,
+    });
+  });
+}
+
+function save(write: (workspace: View["binding"]) => Promise<Row[]>) {
+  const workspace = state.binding;
+  update({ saving: state.saving + 1 });
+  return serial(async () => {
+    try {
+      const saved = await write(workspace);
+      const ids = new Set(saved.map((r) => r.doc.id));
       update({
-        records: [...state.records.filter((r) => r.doc.id !== id), saved],
+        records: [...state.records.filter((r) => !ids.has(r.doc.id)), ...saved],
         saveFailed: false,
       });
       later();

@@ -86,3 +86,16 @@ test("manual task order survives deleting a neighbor, renaming and appending", a
     ["C", "B", "D"],
   );
 });
+
+test("a transferred task follows the destination's last manually positioned item", async () => {
+  const { taskItem, transferPosition, compareOrder } = await import("./listOrder.ts");
+  const list = newList("A");
+  const moved = newTask("Moved");
+  assert.equal(transferPosition(list), undefined);
+  list.tasks = [newTask("Last"), newTask("First")];
+  list.tasks[0].position = { ...taskItem(list, list.tasks[0], 0).position, listName: "Z" };
+  moved.position = transferPosition(list);
+  list.tasks.push(moved);
+  const ordered = list.tasks.map((task, i) => taskItem(list, task, i)).sort(compareOrder);
+  assert.equal(ordered.at(-1).id, taskItem(list, moved, 2).id);
+});

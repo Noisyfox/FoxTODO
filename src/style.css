@@ -114,6 +114,17 @@
   .sidebar-list-row.active {
     @apply bg-accent text-accent-foreground;
   }
+  .list-drop-target {
+    @apply rounded-md bg-accent outline-2 -outline-offset-2 outline-ring;
+  }
+  .move-targets {
+    @apply fixed inset-x-0 bottom-0 z-10 flex max-h-[35dvh] flex-col rounded-t-xl border-t bg-sidebar px-4 pt-3 pb-2 shadow-md;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .move-targets[data-side="top"] {
+    @apply top-0 bottom-auto rounded-t-none rounded-b-xl border-t-0 border-b;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
   .task {
     @apply mb-2 flex min-h-[54px] items-center gap-3 rounded-lg border bg-card px-3 py-2;
   }

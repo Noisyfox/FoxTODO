@@ -44,6 +44,7 @@ import {
   current,
   subscribe,
   mutate,
+  moveTask,
   refresh,
   sync,
   start,
@@ -61,7 +62,13 @@ import {
 } from "./model";
 import { CloudPanel } from "./CloudPanel";
 import { ItemConflicts } from "./ItemConflicts";
-import { SortArea, SortRow } from "./SortArea";
+import {
+  ListTarget,
+  MobileListTargets,
+  SortArea,
+  SortRow,
+  WorkspaceDrag,
+} from "./SortArea";
 import {
   compareOrder,
   listItem,
@@ -95,6 +102,7 @@ function App() {
       page: { active, task, nav, search },
       show,
       closePage,
+      relocateSelection,
     } = useWorkspaceNavigation(viewport.singlePage, v.platform === "android"),
     [modal, setModal] = useState(""),
     [input, setInput] = useState(""),
@@ -236,18 +244,18 @@ function App() {
       ? House
       : special?.icon || ListIcon;
   function taskRows(items: (OrderedItem & { r: Row; t: Task })[]) {
+    function reorder(id: string, target: string) {
+      const item = items.find((row) => row.id === id);
+      const position = movedPosition(items, id, target);
+      if (item && position)
+        editTask(item.r, item.t.id, (task) => {
+          task.position = position;
+        });
+    }
     return (
       <SortArea
         ids={items.map((item) => item.id)}
-        disabled={sort !== "list" || items.length < 2}
-        onMove={(id, target) => {
-          const item = items.find((row) => row.id === id);
-          const position = movedPosition(items, id, target);
-          if (item && position)
-            editTask(item.r, item.t.id, (task) => {
-              task.position = position;
-            });
-        }}
+        onMove={sort === "list" ? reorder : undefined}
       >
         {items.map(card)}
       </SortArea>
@@ -257,13 +265,14 @@ function App() {
     return (
       <SortRow
         id={id}
+        task={{ list: r.doc.id, id: t.id }}
         label={t.title || "未命名任务"}
         onOpen={() => show({ task: { list: r.doc.id, id: t.id }, nav: false }, true)}
         key={id}
         className={
           "task " +
           (t.done ? "finished " : "") +
-          (task?.id === t.id ? "chosen" : "")
+          (task?.list === r.doc.id && task.id === t.id ? "chosen" : "")
         }
       >
         <Checkbox
@@ -339,7 +348,7 @@ function App() {
       {status}
     </>
   );
-  return (
+  const workspace = (
     <SidebarLayout viewport={viewport} withDetail={!!detail}>
       <Sidebar open={nav}>
         <div className="@container flex items-center gap-1 pb-7">
@@ -427,21 +436,23 @@ function App() {
                 </small>
               </Button>
             ))}
-            <Button
-              variant="ghost"
-              disabled={!v.ready}
-              className={navButton}
-              aria-current={
-                active === v.defaultListId && !needle ? "page" : undefined
-              }
-              onClick={() => go(v.defaultListId)}
-            >
-              <House size={18} />
-              任务
-              <small>
-                {defaultList?.doc.tasks.filter((t) => !t.done).length || ""}
-              </small>
-            </Button>
+            <ListTarget list={v.defaultListId}>
+              <Button
+                variant="ghost"
+                disabled={!v.ready}
+                className={navButton}
+                aria-current={
+                  active === v.defaultListId && !needle ? "page" : undefined
+                }
+                onClick={() => go(v.defaultListId)}
+              >
+                <House size={18} />
+                任务
+                <small>
+                  {defaultList?.doc.tasks.filter((t) => !t.done).length || ""}
+                </small>
+              </Button>
+            </ListTarget>
           </nav>
           <div className="mt-6 mb-1 flex items-center justify-between border-t px-2 pt-3 text-xs font-semibold text-muted-foreground">
             <h3>我的清单</h3>
@@ -478,36 +489,37 @@ function App() {
                       }}
                     >
                       {members.map(({ r, id }) => (
-                        <SortRow
-                          key={id}
-                          id={id}
-                          label={r.doc.name}
-                          className={
-                            "sidebar-list-row" +
-                            (active === id ? " active" : "")
-                          }
-                          onOpen={() => go(id)}
-                          role="button"
-                        >
-                          {r.doc.emoji ? (
-                            <span
-                              aria-hidden="true"
-                              className="shrink-0 text-base leading-none"
-                            >
-                              {r.doc.emoji}
-                            </span>
-                          ) : (
-                            <ListIcon size={16} />
-                          )}
-                          <span>{r.doc.name}</span>
-                          {r.conflict ? (
-                            <AlertTriangle size={14} />
-                          ) : (
-                            <small>
-                              {r.doc.tasks.filter((t) => !t.done).length || ""}
-                            </small>
-                          )}
-                        </SortRow>
+                        <ListTarget key={id} list={id}>
+                          <SortRow
+                            id={id}
+                            label={r.doc.name}
+                            className={
+                              "sidebar-list-row" +
+                              (active === id ? " active" : "")
+                            }
+                            onOpen={() => go(id)}
+                            role="button"
+                          >
+                            {r.doc.emoji ? (
+                              <span
+                                aria-hidden="true"
+                                className="shrink-0 text-base leading-none"
+                              >
+                                {r.doc.emoji}
+                              </span>
+                            ) : (
+                              <ListIcon size={16} />
+                            )}
+                            <span>{r.doc.name}</span>
+                            {r.conflict ? (
+                              <AlertTriangle size={14} />
+                            ) : (
+                              <small>
+                                {r.doc.tasks.filter((t) => !t.done).length || ""}
+                              </small>
+                            )}
+                          </SortRow>
+                        </ListTarget>
                       ))}
                     </SortArea>
                   </div>
@@ -722,7 +734,7 @@ function App() {
                 />
                 已完成 <span>{completed.length}</span>
               </Button>
-              {done && taskRows(completed)}
+              {done && <div className="task-list">{taskRows(completed)}</div>}
             </>
           )}
         </div>
@@ -961,7 +973,26 @@ function App() {
           </DialogContent>
         </Dialog>
       )}
+      {viewport.singlePage && (
+        <MobileListTargets
+          lists={[
+            { id: v.defaultListId, name: "任务" },
+            ...customLists.map(({ doc }) => doc),
+          ]}
+        />
+      )}
     </SidebarLayout>
+  );
+  return (
+    <WorkspaceDrag
+      onTransfer={(source, destination, id) => {
+        void moveTask(source, destination, id)
+          .then(() => relocateSelection(source, destination, id))
+          .catch(report);
+      }}
+    >
+      {workspace}
+    </WorkspaceDrag>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
