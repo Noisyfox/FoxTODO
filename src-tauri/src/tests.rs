@@ -515,3 +515,78 @@ async fn keeping_both_copies_preserves_independent_changes_in_each() {
         assert_eq!(record.doc.tasks[0].notes, expected);
     }
 }
+
+#[tokio::test]
+async fn moving_a_task_to_the_default_list_syncs_both_lists() {
+    let task = Task {
+        title: "带附件的任务".into(),
+        done: true,
+        notes: "保留备注".into(),
+        attachments: vec![Attachment {
+            name: "note.txt".into(),
+            content_bytes: "YQ==".into(),
+        }],
+        ..Default::default()
+    };
+    let (_dir, phone) = device();
+    let (_other_dir, other) = device();
+    let drive = FakeDrive::default();
+    let source = add(&phone, "来源");
+    let mut r = get(&phone, source);
+    r.doc.tasks = vec![task.clone(), Task::default()];
+    phone
+        .lock()
+        .unwrap()
+        .edit(r.doc, r.revision, false)
+        .unwrap();
+    ok_sync(&drive, &phone).await;
+    ok_sync(&drive, &other).await;
+
+    {
+        let s = phone.lock().unwrap();
+        assert!(s
+            .move_task(source, DEFAULT_LIST_ID, task.id, 9, None)
+            .is_err());
+        let [from, to] = s
+            .move_task(source, DEFAULT_LIST_ID, task.id, 0, None)
+            .unwrap();
+        assert!(from.dirty && to.dirty);
+        assert_eq!(from.doc.tasks[0].position.as_ref().unwrap().index, 1);
+        assert_eq!(from.base_doc.unwrap().tasks[0], task);
+        assert_eq!(to.doc.tasks, [task.clone()]);
+        assert!(s
+            .move_task(source, DEFAULT_LIST_ID, task.id, to.revision, None)
+            .is_err());
+    }
+    ok_sync(&drive, &phone).await;
+    ok_sync(&drive, &other).await;
+    assert_eq!(get(&other, source).doc.tasks.len(), 1);
+    assert_eq!(get(&other, DEFAULT_LIST_ID).doc.tasks, [task]);
+}
+
+#[test]
+fn interrupted_move_is_replayed_before_the_next_edit() {
+    let (dir, device) = device();
+    let source = add(&device, "A");
+    let destination = add(&device, "B");
+    let before = get(&device, destination);
+    let mut from = get(&device, source);
+    let task = Task::default();
+    from.doc.tasks.push(task.clone());
+    let store = device.into_inner().unwrap();
+    store.edit(from.doc, from.revision, false).unwrap();
+    let moved = store
+        .move_task(source, destination, task.id, before.revision, None)
+        .unwrap();
+    drop(store);
+
+    // Recreate a crash after only the source file was installed.
+    let workspace = dir.path().join("workspaces/local");
+    atomic(&workspace.join(format!("{destination}.json")), &before).unwrap();
+    atomic(&workspace.join("pending-move"), &moved).unwrap();
+    let store = Store::open(dir.path().into()).unwrap();
+    assert!(store.edit(before.doc, before.revision, false).is_err());
+    assert!(store.get(source).unwrap().unwrap().doc.tasks.is_empty());
+    assert_eq!(store.get(destination).unwrap().unwrap().doc.tasks, [task]);
+    assert!(!workspace.join("pending-move").exists());
+}

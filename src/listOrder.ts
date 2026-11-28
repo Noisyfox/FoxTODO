@@ -74,6 +74,19 @@ export function movedPosition(
   return { ...anchor, rank };
 }
 
+function positionAfter(last: OrderedItem): Position {
+  return { ...last.position, rank: generateKeyBetween(key(last), null) };
+}
+
+export function transferPosition(list: List): Position | undefined {
+  let last: OrderedItem | undefined;
+  for (const [i, task] of list.tasks.entries()) {
+    const item = taskItem(list, task, i);
+    if (!last || compareOrder(last, item) < 0) last = item;
+  }
+  return last && positionAfter(last);
+}
+
 // Preserve implicit positions when another edit changes their source name or array index.
 export function preserveOrder(before: List, after: List) {
   const renamed = before.name !== after.name;
@@ -93,10 +106,7 @@ export function preserveOrder(before: List, after: List) {
     if (oldIndices.has(task.id)) continue;
     const item = taskItem(after, task, i);
     if (last && compareOrder(item, last) <= 0) {
-      task.position = {
-        ...last.position,
-        rank: generateKeyBetween(key(last), null),
-      };
+      task.position = positionAfter(last);
     }
     last = taskItem(after, task, i);
   }

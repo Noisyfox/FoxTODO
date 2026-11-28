@@ -93,6 +93,25 @@ fn save_list(
     Ok(row(s.get(id)?.ok_or("保存失败")?))
 }
 #[tauri::command]
+fn move_task(
+    app: State<App>,
+    source: Uuid,
+    destination: Uuid,
+    task: Uuid,
+    destination_revision: u64,
+    position: Option<Position>,
+    workspace: Option<Binding>,
+) -> Result<[Value; 2]> {
+    let s = guard(&app.store)?;
+    if s.settings.binding != workspace {
+        return Err("当前账号或目录已切换".into());
+    }
+    Ok(
+        s.move_task(source, destination, task, destination_revision, position)?
+            .map(row),
+    )
+}
+#[tauri::command]
 async fn resolve(
     app: State<'_, App>,
     id: Uuid,
@@ -363,6 +382,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             snapshot,
             save_list,
+            move_task,
             resolve,
             resolve_items,
             login,

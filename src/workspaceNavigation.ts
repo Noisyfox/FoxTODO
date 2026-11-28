@@ -101,5 +101,10 @@ export function useWorkspaceNavigation(singlePage: boolean, android: boolean) {
         .catch(report);
     };
   }, [android]);
-  return { page, show, closePage };
+  function relocateSelection(source: string, destination: string, id: string) {
+    const selected = current.current.task;
+    if (selected?.list === source && selected.id === id)
+      show({ task: { list: destination, id } });
+  }
+  return { page, show, closePage, relocateSelection };
 }
